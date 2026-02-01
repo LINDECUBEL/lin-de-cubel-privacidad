@@ -582,29 +582,77 @@
 
             const obtenerEstadisticasStrava = async (accessToken) => {
                 try {
-                    const response = await fetch('https://www.strava.com/api/v3/athlete/stats', {
+                    // Primero obtener el ID del atleta
+                    const athleteResponse = await fetch('https://www.strava.com/api/v3/athlete', {
                         headers: {
                             'Authorization': `Bearer ${accessToken}`
                         }
                     });
                     
-                    const stats = await response.json();
+                    if (!athleteResponse.ok) {
+                        console.error('Error al obtener datos del atleta:', athleteResponse.status);
+                        alert(`Error al obtener perfil de Strava: ${athleteResponse.status}`);
+                        return;
+                    }
                     
-                    // Actualizar estadísticas con datos reales
-                    if (stats && stravaAthleteData) {
-                        const nuevasEstadisticas = {
-                            socio: `${stravaAthleteData.firstname} ${stravaAthleteData.lastname}`,
-                            kmMes: Math.round(stats.ytd_ride_totals?.distance / 1000) || 0,
-                            kmAño: Math.round(stats.all_ride_totals?.distance / 1000) || 0,
-                            desnivelMes: Math.round(stats.ytd_ride_totals?.elevation_gain) || 0,
-                            salidasMes: stats.ytd_ride_totals?.count || 0
-                        };
-                        
+                    const athlete = await athleteResponse.json();
+                    console.log('Datos del atleta:', athlete);
+                    
+                    // Obtener estadísticas del atleta
+                    const statsResponse = await fetch(`https://www.strava.com/api/v3/athletes/${athlete.id}/stats`, {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`
+                        }
+                    });
+                    
+                    if (!statsResponse.ok) {
+                        console.error('Error al obtener estadísticas:', statsResponse.status);
+                        alert(`Error al obtener estadísticas de Strava: ${statsResponse.status}`);
+                        return;
+                    }
+                    
+                    const stats = await statsResponse.json();
+                    console.log('Estadísticas obtenidas:', stats);
+                    
+                    // Calcular datos del mes actual (últimos 30 días aproximadamente)
+                    const kmMes = stats.recent_ride_totals ? Math.round(stats.recent_ride_totals.distance / 1000) : 0;
+                    const kmAño = stats.ytd_ride_totals ? Math.round(stats.ytd_ride_totals.distance / 1000) : 0;
+                    const desnivelMes = stats.recent_ride_totals ? Math.round(stats.recent_ride_totals.elevation_gain) : 0;
+                    const salidasMes = stats.recent_ride_totals ? stats.recent_ride_totals.count : 0;
+                    
+                    // Crear nuevo objeto con las estadísticas
+                    const nuevasEstadisticas = {
+                        socio: `${athlete.firstname} ${athlete.lastname}`,
+                        kmMes: kmMes,
+                        kmAño: kmAño,
+                        desnivelMes: desnivelMes,
+                        salidasMes: salidasMes
+                    };
+                    
+                    console.log('Nuevas estadísticas creadas:', nuevasEstadisticas);
+                    
+                    // Verificar si el usuario ya está en la lista
+                    const usuarioExistente = estadisticasStrava.findIndex(e => 
+                        e.socio.toLowerCase() === nuevasEstadisticas.socio.toLowerCase()
+                    );
+                    
+                    if (usuarioExistente >= 0) {
+                        // Actualizar estadísticas existentes
+                        const nuevaLista = [...estadisticasStrava];
+                        nuevaLista[usuarioExistente] = nuevasEstadisticas;
+                        setEstadisticasStrava(nuevaLista);
+                        console.log('Estadísticas actualizadas para usuario existente');
+                    } else {
                         // Agregar al principio de la lista
                         setEstadisticasStrava([nuevasEstadisticas, ...estadisticasStrava]);
+                        console.log('Nuevo usuario agregado a estadísticas');
                     }
+                    
+                    alert(`¡Sincronización exitosa!\nKm mes: ${kmMes}\nKm año: ${kmAño}\nDesnivel: ${desnivelMes}m\nSalidas: ${salidasMes}`);
+                    
                 } catch (error) {
-                    console.error('Error al obtener estadísticas de Strava:', error);
+                    console.error('Error detallado al obtener estadísticas de Strava:', error);
+                    alert(`Error al sincronizar con Strava: ${error.message}\n\nRevisa la consola del navegador para más detalles.`);
                 }
             };
 
@@ -1436,12 +1484,20 @@
                                             )}
                                         </div>
                                     </div>
-                                    <button
-                                        onClick={desconectarStrava}
-                                        className="text-red-600 hover:text-red-800 text-sm"
-                                    >
-                                        Desconectar
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => obtenerEstadisticasStrava(stravaAccessToken)}
+                                            className="bg-orange-500 text-white px-4 py-2 rounded text-sm hover:bg-orange-600"
+                                        >
+                                            🔄 Sincronizar
+                                        </button>
+                                        <button
+                                            onClick={desconectarStrava}
+                                            className="text-red-600 hover:text-red-800 text-sm"
+                                        >
+                                            Desconectar
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <h3 className="text-lg font-semibold mb-4">Clasificación del Club - Mes Actual</h3>
