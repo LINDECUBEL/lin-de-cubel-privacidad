@@ -50,6 +50,41 @@
             background-color: #1a1a1a;
         }
     </style>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#a4c639">
+    <meta name="description" content="Sistema de gestión del Club Ciclista Lin de Cubel">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Lin de Cubel">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><rect fill='%23a4c639' width='200' height='200'/><circle cx='60' cy='100' r='35' fill='none' stroke='white' stroke-width='12'/><circle cx='140' cy='100' r='35' fill='none' stroke='white' stroke-width='12'/><path d='M 85 75 Q 100 60 115 75' fill='none' stroke='white' stroke-width='12' stroke-linecap='round'/></svg>">
+    
+    <script>
+        // Manifest dinámico inline
+        const manifest = {
+            name: "Lin de Cubel Club Ciclista",
+            short_name: "Lin de Cubel",
+            description: "Sistema de gestión del Club Ciclista Lin de Cubel",
+            start_url: "./",
+            display: "standalone",
+            background_color: "#f8faf9",
+            theme_color: "#a4c639",
+            orientation: "portrait-primary",
+            icons: [
+                {
+                    src: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><rect fill='%23a4c639' width='200' height='200'/><circle cx='60' cy='100' r='35' fill='none' stroke='white' stroke-width='12'/><circle cx='140' cy='100' r='35' fill='none' stroke='white' stroke-width='12'/><path d='M 85 75 Q 100 60 115 75' fill='none' stroke='white' stroke-width='12' stroke-linecap='round'/></svg>",
+                    sizes: "any",
+                    type: "image/svg+xml",
+                    purpose: "any maskable"
+                }
+            ]
+        };
+        
+        const stringManifest = JSON.stringify(manifest);
+        const blob = new Blob([stringManifest], {type: 'application/json'});
+        const manifestURL = URL.createObjectURL(blob);
+        document.write('<link rel="manifest" href="' + manifestURL + '">');
+    </script>
 </head>
 <body class="bg-gray-50">
     <div id="root"></div>
@@ -59,7 +94,12 @@
 
         function ClubCiclistaApp() {
             const [activeTab, setActiveTab] = useState('socios');
-            const [isAdmin, setIsAdmin] = useState(true);
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [userRole, setUserRole] = useState(''); // 'admin' o 'socio'
+            const [currentUser, setCurrentUser] = useState(null); // Datos del socio logueado
+            const [loginEmail, setLoginEmail] = useState('');
+            const [loginPassword, setLoginPassword] = useState('');
+            const [isAdmin, setIsAdmin] = useState(false);
             const [usuarioActual, setUsuarioActual] = useState({
                 nombre: 'Administrador',
                 rol: 'admin' // 'admin' o 'socio'
@@ -284,6 +324,13 @@
             };
 
             const sociosFiltrados = socios.filter(socio => {
+                // Si es socio (no admin), solo ver su propia información
+                if (!isAdmin && currentUser) {
+                    if (socio.email !== currentUser.email && socio.dni !== currentUser.dni) {
+                        return false;
+                    }
+                }
+                
                 const nombreCompleto = `${socio.nombre} ${socio.apellidos}`.toLowerCase();
                 const cumpleBusqueda = nombreCompleto.includes(busquedaSocio.toLowerCase()) || 
                                        socio.dni.toLowerCase().includes(busquedaSocio.toLowerCase()) ||
@@ -307,7 +354,7 @@
                 setSocios(socios.map(s => 
                     s.id === socioId ? { ...s, cuotaPagada: true, fechaPago: new Date().toISOString().split('T')[0] } : s
                 ));
-                alert('Pago procesado correctamente. Cuota de 50€ pagada.');
+                alert('Pago procesado correctamente. Cuota de 20€ pagada.');
             };
 
             const exportarSociosCSV = () => {
@@ -447,35 +494,47 @@
             // Funciones para Tienda
             const agregarAlCarrito = (producto, talla) => {
                 if (producto.stock[talla] > 0) {
-                    setCarrito([...carrito, { ...producto, talla, cantidad: 1 }]);
-                    setProductos(productos.map(p => 
-                        p.id === producto.id 
-                            ? { ...p, stock: { ...p.stock, [talla]: p.stock[talla] - 1 } }
-                            : p
-                    ));
+                    setCarrito([...carrito, { 
+                        ...producto, 
+                        talla, 
+                        cantidad: 1,
+                        productoId: producto.id // Guardar ID para actualizar stock después
+                    }]);
+                    alert(`${producto.nombre} (Talla ${talla}) añadido al carrito`);
+                } else {
+                    alert(`No hay stock disponible de ${producto.nombre} en talla ${talla}`);
                 }
             };
 
             const eliminarDelCarrito = (index) => {
-                const item = carrito[index];
-                setProductos(productos.map(p => 
-                    p.id === item.id 
-                        ? { ...p, stock: { ...p.stock, [item.talla]: p.stock[item.talla] + 1 } }
-                        : p
-                ));
                 setCarrito(carrito.filter((_, i) => i !== index));
             };
 
             const procesarCompra = () => {
                 if (carrito.length > 0) {
+                    // Descontar del stock
+                    const productosActualizados = [...productos];
+                    carrito.forEach(itemCarrito => {
+                        const productoIndex = productosActualizados.findIndex(p => p.id === itemCarrito.productoId);
+                        if (productoIndex >= 0) {
+                            const producto = productosActualizados[productoIndex];
+                            if (producto.stock[itemCarrito.talla] > 0) {
+                                producto.stock[itemCarrito.talla] -= 1;
+                            }
+                        }
+                    });
+                    setProductos(productosActualizados);
+                    
+                    // Registrar compra
                     const compra = {
                         id: Date.now(),
                         fecha: new Date().toISOString().split('T')[0],
                         items: [...carrito],
-                        total: carrito.reduce((sum, item) => sum + item.precio, 0)
+                        total: carrito.reduce((sum, item) => sum + item.precio, 0),
+                        comprador: currentUser ? `${currentUser.nombre} ${currentUser.apellidos}` : 'Admin'
                     };
                     setHistorialCompras([compra, ...historialCompras]);
-                    alert('Compra procesada correctamente. Total: ' + compra.total + '€');
+                    alert('Compra procesada correctamente. Total: ' + compra.total + '€\n\nEl stock se ha actualizado automáticamente.');
                     setCarrito([]);
                 }
             };
@@ -530,6 +589,48 @@
             };
 
             const notificacionesNoLeidas = notificaciones.filter(n => !n.leida).length;
+
+            // Funciones de Login
+            const ADMIN_PASSWORD = 'lindecubel2025'; // Contraseña del administrador
+            
+            const loginAdmin = () => {
+                if (loginPassword === ADMIN_PASSWORD) {
+                    setIsLoggedIn(true);
+                    setUserRole('admin');
+                    setIsAdmin(true);
+                    setCurrentUser({ nombre: 'Administrador', rol: 'admin' });
+                    setLoginPassword('');
+                    alert('¡Bienvenido Administrador!');
+                } else {
+                    alert('Contraseña incorrecta');
+                }
+            };
+            
+            const loginSocio = () => {
+                const socio = socios.find(s => 
+                    s.email.toLowerCase() === loginEmail.toLowerCase() || 
+                    s.dni.toLowerCase() === loginEmail.toLowerCase()
+                );
+                
+                if (socio) {
+                    setIsLoggedIn(true);
+                    setUserRole('socio');
+                    setIsAdmin(false);
+                    setCurrentUser(socio);
+                    setLoginEmail('');
+                    alert(`¡Bienvenido ${socio.nombre} ${socio.apellidos}!`);
+                } else {
+                    alert('Socio no encontrado. Verifica tu email o DNI.');
+                }
+            };
+            
+            const logout = () => {
+                setIsLoggedIn(false);
+                setUserRole('');
+                setIsAdmin(false);
+                setCurrentUser(null);
+                setActiveTab('socios');
+            };
 
             // Funciones para Strava
             const conectarConStrava = () => {
@@ -725,7 +826,7 @@
                             <div className="flex items-center justify-between">
                                 <div>
                                     <p className="text-white opacity-90 text-sm mb-1">Ingresos Cuotas</p>
-                                    <p className="text-3xl font-bold">{socios.filter(s => s.cuotaPagada).length * 50}€</p>
+                                    <p className="text-3xl font-bold">{socios.filter(s => s.cuotaPagada).length * 20}€</p>
                                 </div>
                                 <div className="bg-white bg-opacity-20 rounded-full p-3">
                                     <span className="text-3xl">💰</span>
@@ -745,6 +846,28 @@
                                     📥 Exportar CSV
                                 </button>
                             )}
+                        </div>
+                        
+                        {/* Información de pago */}
+                        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <h3 className="font-semibold text-lg mb-3 text-blue-900">💰 Información de Pago de Cuota Anual</h3>
+                            <div className="grid md:grid-cols-2 gap-4 text-sm">
+                                <div>
+                                    <p className="font-semibold text-gray-700 mb-2">Cuota anual: <span className="text-corp-primary text-xl">20€</span></p>
+                                    <p className="text-gray-600 mb-1"><strong>🏦 Transferencia bancaria:</strong></p>
+                                    <p className="font-mono text-sm bg-white px-3 py-2 rounded border">ES07 3059 0021 4429 2850 5722</p>
+                                    <p className="text-xs text-gray-500 mt-1">Titular: Club Ciclista Lin de Cubel</p>
+                                </div>
+                                <div>
+                                    <p className="font-semibold text-gray-700 mb-2">Concepto a indicar:</p>
+                                    <p className="bg-white px-3 py-2 rounded border text-gray-700">
+                                        <strong>Cuota [Tu Nombre y Apellidos]</strong>
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-2">
+                                        ⚠️ Importante: Tras realizar el pago, contacta con el administrador para que actualice tu estado de cuota en la aplicación.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                         
                         {isAdmin && (
@@ -905,7 +1028,7 @@
                                                             onClick={() => pagarCuota(socio.id)}
                                                             className="btn-primary px-3 py-1 rounded text-sm"
                                                         >
-                                                            Pagar Cuota (50€)
+                                                            Pagar Cuota (20€)
                                                         </button>
                                                     )}
                                                     {isAdmin && (
@@ -1564,6 +1687,68 @@
 
             return (
                 <div className="min-h-screen bg-gray-50">
+                    {!isLoggedIn ? (
+                        // Pantalla de Login
+                        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-corp-primary to-corp-dark">
+                            <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full mx-4">
+                                <div className="text-center mb-8">
+                                    <svg width="100" height="100" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" className="mx-auto mb-4">
+                                        <circle cx="60" cy="100" r="35" fill="none" stroke="#a4c639" strokeWidth="12"/>
+                                        <circle cx="140" cy="100" r="35" fill="none" stroke="#a4c639" strokeWidth="12"/>
+                                        <path d="M 85 75 Q 100 60 115 75" fill="none" stroke="#a4c639" strokeWidth="12" strokeLinecap="round"/>
+                                    </svg>
+                                    <h1 className="text-3xl font-bold text-corp-secondary mb-2">LIN DE CUBEL</h1>
+                                    <p className="text-gray-600">Sistema de Gestión del Club</p>
+                                </div>
+                                
+                                <div className="space-y-4">
+                                    {/* Login Administrador */}
+                                    <div className="border-2 border-corp-primary rounded-lg p-6">
+                                        <h2 className="text-xl font-bold mb-4 text-corp-secondary">🔐 Administrador</h2>
+                                        <input
+                                            type="password"
+                                            placeholder="Contraseña"
+                                            value={loginPassword}
+                                            onChange={(e) => setLoginPassword(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && loginAdmin()}
+                                            className="w-full border rounded px-4 py-3 mb-3"
+                                        />
+                                        <button
+                                            onClick={loginAdmin}
+                                            className="w-full btn-primary px-4 py-3 rounded font-semibold"
+                                        >
+                                            Entrar como Administrador
+                                        </button>
+                                    </div>
+                                    
+                                    {/* Login Socio */}
+                                    <div className="border-2 border-gray-300 rounded-lg p-6">
+                                        <h2 className="text-xl font-bold mb-4 text-corp-secondary">👤 Socio</h2>
+                                        <input
+                                            type="text"
+                                            placeholder="Email o DNI"
+                                            value={loginEmail}
+                                            onChange={(e) => setLoginEmail(e.target.value)}
+                                            onKeyPress={(e) => e.key === 'Enter' && loginSocio()}
+                                            className="w-full border rounded px-4 py-3 mb-3"
+                                        />
+                                        <button
+                                            onClick={loginSocio}
+                                            className="w-full btn-secondary px-4 py-3 rounded font-semibold"
+                                        >
+                                            Entrar como Socio
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <p className="text-xs text-gray-500 text-center mt-6">
+                                    © 2025 Club Ciclista Lin de Cubel
+                                </p>
+                            </div>
+                        </div>
+                    ) : (
+                        // Aplicación principal (cuando está logueado)
+                        <>
                     {/* Header */}
                     <header className="bg-corp-primary text-white shadow-lg">
                         <div className="container mx-auto px-4 py-4">
@@ -1722,6 +1907,24 @@
                                             ✎ Editar Logo
                                         </button>
                                     )}
+                                    
+                                    {/* Usuario y Logout */}
+                                    <div className="flex items-center gap-3">
+                                        <div className="text-right">
+                                            <p className="text-sm font-semibold text-corp-secondary">
+                                                {currentUser ? `${currentUser.nombre} ${currentUser.apellidos || ''}` : 'Usuario'}
+                                            </p>
+                                            <p className="text-xs text-gray-600">
+                                                {userRole === 'admin' ? '🔐 Administrador' : '👤 Socio'}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={logout}
+                                            className="bg-red-600 text-white px-4 py-2 rounded text-sm hover:bg-red-700"
+                                        >
+                                            Cerrar Sesión
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1816,11 +2019,114 @@
                             </div>
                         </div>
                     </footer>
+                    </>
+                    )}
                 </div>
             );
         }
 
         ReactDOM.render(<ClubCiclistaApp />, document.getElementById('root'));
+    </script>
+    
+    <!-- Service Worker para PWA -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            // Crear service worker inline
+            const swCode = `
+                const CACHE_NAME = 'lin-de-cubel-v1';
+                
+                self.addEventListener('install', (event) => {
+                    console.log('Service Worker installing.');
+                    self.skipWaiting();
+                });
+                
+                self.addEventListener('activate', (event) => {
+                    console.log('Service Worker activating.');
+                    event.waitUntil(clients.claim());
+                });
+                
+                self.addEventListener('fetch', (event) => {
+                    event.respondWith(
+                        caches.match(event.request).then((response) => {
+                            return response || fetch(event.request).then((fetchResponse) => {
+                                return caches.open(CACHE_NAME).then((cache) => {
+                                    cache.put(event.request, fetchResponse.clone());
+                                    return fetchResponse;
+                                });
+                            });
+                        }).catch(() => {
+                            // Offline fallback
+                            return new Response('Offline - Lin de Cubel', {
+                                headers: { 'Content-Type': 'text/plain' }
+                            });
+                        })
+                    );
+                });
+            `;
+            
+            const blob = new Blob([swCode], { type: 'application/javascript' });
+            const swURL = URL.createObjectURL(blob);
+            
+            navigator.serviceWorker.register(swURL).then((registration) => {
+                console.log('Service Worker registrado:', registration);
+                
+                // Mostrar banner de instalación personalizado
+                let deferredPrompt;
+                window.addEventListener('beforeinstallprompt', (e) => {
+                    e.preventDefault();
+                    deferredPrompt = e;
+                    
+                    // Mostrar banner personalizado
+                    const banner = document.createElement('div');
+                    banner.style.cssText = `
+                        position: fixed;
+                        bottom: 20px;
+                        left: 50%;
+                        transform: translateX(-50%);
+                        background: #a4c639;
+                        color: white;
+                        padding: 15px 25px;
+                        border-radius: 10px;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                        z-index: 10000;
+                        font-family: 'Orbitron', sans-serif;
+                        display: flex;
+                        align-items: center;
+                        gap: 15px;
+                        max-width: 90%;
+                    `;
+                    
+                    banner.innerHTML = `
+                        <span>📱 ¿Instalar Lin de Cubel como app?</span>
+                        <button id="install-btn" style="background: white; color: #a4c639; padding: 8px 16px; border-radius: 5px; border: none; font-weight: bold; cursor: pointer;">
+                            Instalar
+                        </button>
+                        <button id="close-btn" style="background: transparent; color: white; padding: 8px; border: none; cursor: pointer; font-size: 20px;">
+                            ✕
+                        </button>
+                    `;
+                    
+                    document.body.appendChild(banner);
+                    
+                    document.getElementById('install-btn').addEventListener('click', () => {
+                        banner.style.display = 'none';
+                        deferredPrompt.prompt();
+                        deferredPrompt.userChoice.then((choiceResult) => {
+                            if (choiceResult.outcome === 'accepted') {
+                                console.log('Usuario aceptó instalar la app');
+                            }
+                            deferredPrompt = null;
+                        });
+                    });
+                    
+                    document.getElementById('close-btn').addEventListener('click', () => {
+                        banner.style.display = 'none';
+                    });
+                });
+            }).catch((error) => {
+                console.error('Error registrando Service Worker:', error);
+            });
+        }
     </script>
 </body>
 </html>
