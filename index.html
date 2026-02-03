@@ -64,6 +64,10 @@
             const [stravaStats, setStravaStats] = useState([]);
             const [nuevaSalida, setNuevaSalida] = useState({ nombre: '', fecha: '', hora: '', distancia: '', desnivel: '', nivel: 'Intermedio', punto_encuentro: '' });
             const [mostrarFormSalida, setMostrarFormSalida] = useState(false);
+            const [nuevoProducto, setNuevoProducto] = useState({ nombre: '', precio: '', imagen: '', stock_xs: 0, stock_s: 0, stock_m: 0, stock_l: 0, stock_xl: 0, stock_xxl: 0 });
+            const [mostrarFormProducto, setMostrarFormProducto] = useState(false);
+            const [compras, setCompras] = useState([]);
+            const [verHistorial, setVerHistorial] = useState(false);
 
             useEffect(() => {
                 supabase.auth.getSession().then(({ data: { session } }) => {
@@ -97,6 +101,8 @@
                 if (inscripcionesData) setInscripciones(inscripcionesData);
                 const { data: stravaData } = await supabase.from('strava_stats').select('*, socios(nombre, apellidos)');
                 if (stravaData) setStravaStats(stravaData);
+                const { data: comprasData } = await supabase.from('compras').select('*').order('created_at', { ascending: false });
+                if (comprasData) setCompras(comprasData);
             };
 
             const loginAdmin = () => {
@@ -191,6 +197,39 @@
                 const { error } = await supabase.from('salidas').delete().eq('id', salidaId);
                 if (error) alert('Error: ' + error.message);
                 else { alert('Salida eliminada'); loadAllData(); }
+            };
+
+            const crearProducto = async () => {
+                if (!isAdmin) return;
+                if (!nuevoProducto.nombre || !nuevoProducto.precio) {
+                    alert('Completa nombre y precio');
+                    return;
+                }
+                const { error } = await supabase.from('productos').insert([{
+                    nombre: nuevoProducto.nombre,
+                    precio: parseFloat(nuevoProducto.precio),
+                    imagen: nuevoProducto.imagen,
+                    stock_xs: parseInt(nuevoProducto.stock_xs) || 0,
+                    stock_s: parseInt(nuevoProducto.stock_s) || 0,
+                    stock_m: parseInt(nuevoProducto.stock_m) || 0,
+                    stock_l: parseInt(nuevoProducto.stock_l) || 0,
+                    stock_xl: parseInt(nuevoProducto.stock_xl) || 0,
+                    stock_xxl: parseInt(nuevoProducto.stock_xxl) || 0
+                }]);
+                if (error) alert('Error: ' + error.message);
+                else {
+                    alert('Producto creado');
+                    setNuevoProducto({ nombre: '', precio: '', imagen: '', stock_xs: 0, stock_s: 0, stock_m: 0, stock_l: 0, stock_xl: 0, stock_xxl: 0 });
+                    setMostrarFormProducto(false);
+                    loadAllData();
+                }
+            };
+
+            const eliminarProducto = async (productoId) => {
+                if (!isAdmin || !confirm('¿Eliminar este producto?')) return;
+                const { error } = await supabase.from('productos').delete().eq('id', productoId);
+                if (error) alert('Error: ' + error.message);
+                else { alert('Producto eliminado'); loadAllData(); }
             };
 
             const agregarAlCarrito = (producto, talla) => {
@@ -425,17 +464,19 @@
                                         <tr>
                                             <th className="px-4 py-2 text-left">Nombre</th>
                                             <th className="px-4 py-2 text-left">Email</th>
-                                            <th className="px-4 py-2 text-left">DNI</th>
+                                            <th className="px-4 py-2 text-left">Teléfono</th>
+                                            {isAdmin && <th className="px-4 py-2 text-left">DNI</th>}
                                             <th className="px-4 py-2 text-left">Cuota</th>
                                             {isAdmin && <th className="px-4 py-2 text-left">Acciones</th>}
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {socios.filter(s => isAdmin || s.id === currentSocio?.id).map(socio => (
+                                        {socios.map(socio => (
                                             <tr key={socio.id} className="border-b">
                                                 <td className="px-4 py-3">{socio.nombre} {socio.apellidos}</td>
                                                 <td className="px-4 py-3">{socio.email}</td>
-                                                <td className="px-4 py-3">{socio.dni}</td>
+                                                <td className="px-4 py-3">{socio.telefono || '-'}</td>
+                                                {isAdmin && <td className="px-4 py-3">{socio.dni}</td>}
                                                 <td className="px-4 py-3">
                                                     {socio.cuota_pagada ? (
                                                         <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm">✓ Pagada {socio.fecha_pago && `(${socio.fecha_pago})`}</span>
@@ -553,47 +594,145 @@
                         
                         {activeTab === 'tienda' && (
                             <div className="bg-white rounded-lg shadow p-6">
-                                <h2 className="text-2xl font-bold mb-4">Tienda del Club</h2>
-                                <div className="grid md:grid-cols-3 gap-4 mb-6">
-                                    {productos.map(producto => (
-                                        <div key={producto.id} className="border rounded-lg p-4">
-                                            {producto.imagen ? (
-                                                <img src={producto.imagen} className="w-full h-48 object-cover rounded mb-3" alt={producto.nombre}/>
-                                            ) : (
-                                                <div className="w-full h-48 bg-gray-200 rounded mb-3 flex items-center justify-center text-6xl">📦</div>
-                                            )}
-                                            <h3 className="font-bold">{producto.nombre}</h3>
-                                            <p className="text-corp-primary font-bold text-xl">{producto.precio}€</p>
-                                            <div className="mt-3 grid grid-cols-3 gap-2">
-                                                {['XS', 'S', 'M', 'L', 'XL', 'XXL'].map(talla => {
-                                                    const stockField = `stock_${talla.toLowerCase()}`;
-                                                    const stock = producto[stockField];
-                                                    return (
-                                                        <button key={talla} onClick={() => agregarAlCarrito(producto, talla)}
-                                                            disabled={stock === 0}
-                                                            className={`px-2 py-1 rounded text-sm ${stock > 0 ? 'btn-primary' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>
-                                                            {talla} ({stock})
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-2xl font-bold">Tienda del Club</h2>
+                                    <div className="flex gap-2">
+                                        {!isAdmin && (
+                                            <button onClick={() => setVerHistorial(!verHistorial)} className="btn-secondary px-4 py-2 rounded text-sm">
+                                                {verHistorial ? '🛒 Ver Productos' : '📦 Mis Compras'}
+                                            </button>
+                                        )}
+                                        {isAdmin && (
+                                            <button onClick={() => setMostrarFormProducto(!mostrarFormProducto)} className="btn-primary px-4 py-2 rounded">
+                                                {mostrarFormProducto ? '✕ Cancelar' : '➕ Nuevo Producto'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                {mostrarFormProducto && isAdmin && (
+                                    <div className="mb-6 p-4 bg-corp-bg-pale rounded-lg">
+                                        <h3 className="font-bold mb-3">Crear Nuevo Producto</h3>
+                                        <div className="grid md:grid-cols-2 gap-3">
+                                            <input type="text" placeholder="Nombre del producto *" value={nuevoProducto.nombre}
+                                                onChange={(e) => setNuevoProducto({...nuevoProducto, nombre: e.target.value})}
+                                                className="border rounded px-3 py-2"/>
+                                            <input type="number" placeholder="Precio (€) *" value={nuevoProducto.precio}
+                                                onChange={(e) => setNuevoProducto({...nuevoProducto, precio: e.target.value})}
+                                                className="border rounded px-3 py-2"/>
+                                            <input type="text" placeholder="URL de la imagen" value={nuevoProducto.imagen}
+                                                onChange={(e) => setNuevoProducto({...nuevoProducto, imagen: e.target.value})}
+                                                className="border rounded px-3 py-2 md:col-span-2"/>
+                                            <div className="md:col-span-2">
+                                                <p className="font-semibold mb-2">Stock por talla:</p>
+                                                <div className="grid grid-cols-6 gap-2">
+                                                    {['xs', 's', 'm', 'l', 'xl', 'xxl'].map(talla => (
+                                                        <div key={talla}>
+                                                            <label className="text-xs uppercase block mb-1">{talla}</label>
+                                                            <input type="number" min="0" value={nuevoProducto[`stock_${talla}`]}
+                                                                onChange={(e) => setNuevoProducto({...nuevoProducto, [`stock_${talla}`]: e.target.value})}
+                                                                className="border rounded px-2 py-1 w-full text-sm"/>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <button onClick={crearProducto} className="btn-primary px-6 py-2 rounded mt-3">Crear Producto</button>
+                                    </div>
+                                )}
+                                
+                                {!verHistorial ? (
+                                    <>
+                                        <div className="grid md:grid-cols-3 gap-4 mb-6">
+                                            {productos.map(producto => (
+                                                <div key={producto.id} className="border rounded-lg p-4 relative">
+                                                    {isAdmin && (
+                                                        <button onClick={() => eliminarProducto(producto.id)} 
+                                                            className="absolute top-2 right-2 text-red-600 hover:bg-red-50 px-2 py-1 rounded text-sm">
+                                                            🗑️
                                                         </button>
+                                                    )}
+                                                    {producto.imagen ? (
+                                                        <img src={producto.imagen} className="w-full h-48 object-cover rounded mb-3" alt={producto.nombre}/>
+                                                    ) : (
+                                                        <div className="w-full h-48 bg-gray-200 rounded mb-3 flex items-center justify-center text-6xl">📦</div>
+                                                    )}
+                                                    <h3 className="font-bold">{producto.nombre}</h3>
+                                                    <p className="text-corp-primary font-bold text-xl">{producto.precio}€</p>
+                                                    {!isAdmin && (
+                                                        <div className="mt-3 grid grid-cols-3 gap-2">
+                                                            {['XS', 'S', 'M', 'L', 'XL', 'XXL'].map(talla => {
+                                                                const stockField = `stock_${talla.toLowerCase()}`;
+                                                                const stock = producto[stockField];
+                                                                return (
+                                                                    <button key={talla} onClick={() => agregarAlCarrito(producto, talla)}
+                                                                        disabled={stock === 0}
+                                                                        className={`px-2 py-1 rounded text-sm ${stock > 0 ? 'btn-primary' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>
+                                                                        {talla} ({stock})
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                    {isAdmin && (
+                                                        <div className="mt-3 text-sm text-gray-600">
+                                                            <p>Stock: XS:{producto.stock_xs} S:{producto.stock_s} M:{producto.stock_m} L:{producto.stock_l} XL:{producto.stock_xl} XXL:{producto.stock_xxl}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        
+                                        {carrito.length > 0 && !isAdmin && (
+                                            <div className="border-t pt-6">
+                                                <h3 className="font-bold mb-3">🛒 Carrito ({carrito.length})</h3>
+                                                {carrito.map((item, i) => (
+                                                    <div key={i} className="flex justify-between items-center mb-2 p-2 bg-gray-50 rounded">
+                                                        <span>{item.nombre} - {item.talla} - {item.precio}€</span>
+                                                        <button onClick={() => eliminarDelCarrito(i)} className="text-red-600 hover:bg-red-50 px-2 py-1 rounded">✕</button>
+                                                    </div>
+                                                ))}
+                                                <div className="mt-4 flex justify-between items-center">
+                                                    <span className="font-bold text-xl">Total: {carrito.reduce((s, i) => s + i.precio, 0)}€</span>
+                                                    <button onClick={procesarCompra} className="btn-primary px-6 py-3 rounded">Finalizar Compra</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div>
+                                        <h3 className="font-bold text-lg mb-4">📦 Historial de Compras</h3>
+                                        {compras.filter(c => c.socio_id === currentSocio?.id).length === 0 ? (
+                                            <div className="text-center py-12 text-gray-500">
+                                                <p className="text-6xl mb-4">🛍️</p>
+                                                <p>No has realizado compras aún</p>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-4">
+                                                {compras.filter(c => c.socio_id === currentSocio?.id).map(compra => {
+                                                    const items = JSON.parse(compra.items);
+                                                    return (
+                                                        <div key={compra.id} className="border rounded-lg p-4">
+                                                            <div className="flex justify-between items-center mb-3">
+                                                                <div>
+                                                                    <p className="font-semibold">Pedido #{compra.id.substring(0, 8)}</p>
+                                                                    <p className="text-sm text-gray-600">📅 {compra.fecha}</p>
+                                                                </div>
+                                                                <p className="text-xl font-bold text-corp-primary">{compra.total}€</p>
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                {items.map((item, i) => (
+                                                                    <div key={i} className="flex justify-between text-sm bg-gray-50 p-2 rounded">
+                                                                        <span>{item.nombre} - Talla {item.talla}</span>
+                                                                        <span>{item.precio}€</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
                                                     );
                                                 })}
                                             </div>
-                                        </div>
-                                    ))}
-                                </div>
-                                
-                                {carrito.length > 0 && (
-                                    <div className="border-t pt-6">
-                                        <h3 className="font-bold mb-3">🛒 Carrito ({carrito.length})</h3>
-                                        {carrito.map((item, i) => (
-                                            <div key={i} className="flex justify-between items-center mb-2 p-2 bg-gray-50 rounded">
-                                                <span>{item.nombre} - {item.talla} - {item.precio}€</span>
-                                                <button onClick={() => eliminarDelCarrito(i)} className="text-red-600 hover:bg-red-50 px-2 py-1 rounded">✕</button>
-                                            </div>
-                                        ))}
-                                        <div className="mt-4 flex justify-between items-center">
-                                            <span className="font-bold text-xl">Total: {carrito.reduce((s, i) => s + i.precio, 0)}€</span>
-                                            <button onClick={procesarCompra} className="btn-primary px-6 py-3 rounded">Finalizar Compra</button>
-                                        </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
