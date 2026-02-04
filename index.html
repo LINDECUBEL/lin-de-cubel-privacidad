@@ -49,9 +49,6 @@
                 white-space: nowrap;
                 -webkit-overflow-scrolling: touch;
             }
-            .responsive-text { font-size: 0.875rem; }
-            .mobile-grid { grid-template-columns: 1fr !important; }
-            .mobile-padding { padding: 1rem !important; }
             .mobile-text-sm { font-size: 0.75rem !important; }
         }
     </style>
@@ -103,31 +100,17 @@
             const [editandoLogo, setEditandoLogo] = useState(false);
 
             useEffect(() => {
-                // Timeout de seguridad para evitar carga infinita
-                const loadTimeout = setTimeout(() => {
-                    setLoading(false);
-                }, 3000);
-                
                 supabase.auth.getSession().then(({ data: { session } }) => {
-                    clearTimeout(loadTimeout);
                     setSession(session);
                     if (session) loadUserData(session.user);
                     setLoading(false);
-                }).catch((error) => {
-                    console.error('Error al cargar sesión:', error);
-                    clearTimeout(loadTimeout);
-                    setLoading(false);
                 });
-                
                 const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
                     setSession(session);
                     if (session) loadUserData(session.user);
                     else { setCurrentSocio(null); setIsAdmin(false); }
                 });
-                return () => {
-                    clearTimeout(loadTimeout);
-                    subscription.unsubscribe();
-                };
+                return () => subscription.unsubscribe();
             }, []);
 
             const loadUserData = async (user) => {
@@ -526,36 +509,36 @@
                 <div className="min-h-screen bg-gray-50">
                     <header className="bg-corp-primary text-white shadow-lg">
                         <div className="container mx-auto px-4 py-4">
-                            <div className="flex items-center justify-between flex-wrap gap-2">
-                                <div className="flex items-center gap-2 md:gap-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-4">
                                     {logoClub ? (
-                                        <img src={logoClub} alt="Logo" className="h-10 w-10 md:h-12 md:w-12 object-contain rounded" />
+                                        <img src={logoClub} alt="Logo" className="h-12 w-12 object-contain rounded" />
                                     ) : (
-                                        <svg width="40" height="40" viewBox="0 0 200 200" className="md:w-[50px] md:h-[50px]">
+                                        <svg width="50" height="50" viewBox="0 0 200 200">
                                             <circle cx="60" cy="100" r="35" fill="none" stroke="white" strokeWidth="12"/>
                                             <circle cx="140" cy="100" r="35" fill="none" stroke="white" strokeWidth="12"/>
                                             <path d="M 85 75 Q 100 60 115 75" fill="none" stroke="white" strokeWidth="12" strokeLinecap="round"/>
                                         </svg>
                                     )}
                                     <div>
-                                        <h1 className="text-xl md:text-2xl font-bold">LIN DE CUBEL</h1>
-                                        <p className="text-xs md:text-sm opacity-90">Club Ciclista</p>
+                                        <h1 className="text-2xl font-bold">LIN DE CUBEL</h1>
+                                        <p className="text-sm opacity-90">Club Ciclista</p>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2 md:gap-3">
+                                <div className="flex items-center gap-3">
                                     {isAdmin && !editandoLogo && (
                                         <button 
                                             onClick={() => setEditandoLogo(true)}
-                                            className="bg-white text-corp-primary px-2 md:px-3 py-1 rounded text-xs md:text-sm hover:bg-gray-100"
+                                            className="bg-white text-corp-primary px-3 py-1 rounded text-sm hover:bg-gray-100"
                                         >
-                                            ✎ Logo
+                                            ✎ {logoClub ? 'Cambiar' : 'Añadir'} Logo
                                         </button>
                                     )}
-                                    <div className="text-right hidden md:block">
+                                    <div className="text-right">
                                         <p className="text-sm font-semibold">{isAdmin ? 'Administrador' : currentSocio ? `${currentSocio.nombre} ${currentSocio.apellidos}` : 'Usuario'}</p>
                                         <p className="text-xs opacity-75">{isAdmin ? '🔐 Admin' : '👤 Socio'}</p>
                                     </div>
-                                    <button onClick={logout} className="bg-red-600 px-3 md:px-4 py-2 rounded text-xs md:text-sm hover:bg-red-700">Salir</button>
+                                    <button onClick={logout} className="bg-red-600 px-4 py-2 rounded text-sm hover:bg-red-700">Salir</button>
                                 </div>
                             </div>
                         </div>
@@ -648,44 +631,42 @@
                                         </div>
                                     </div>
                                 </div>
-                                <div className="responsive-table">
-                                    <table className="w-full mobile-text-sm">
-                                        <thead className="bg-gray-100">
-                                            <tr>
-                                                <th className="px-4 py-2 text-left">Nombre</th>
-                                                <th className="px-4 py-2 text-left">Email</th>
-                                                <th className="px-4 py-2 text-left">Teléfono</th>
-                                                {isAdmin && <th className="px-4 py-2 text-left">DNI</th>}
-                                                <th className="px-4 py-2 text-left">Cuota</th>
-                                                {isAdmin && <th className="px-4 py-2 text-left">Acciones</th>}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {socios.map(socio => (
-                                                <tr key={socio.id} className="border-b">
-                                                    <td className="px-4 py-3">{socio.nombre} {socio.apellidos}</td>
-                                                    <td className="px-4 py-3">{socio.email}</td>
-                                                    <td className="px-4 py-3">{socio.telefono || '-'}</td>
-                                                    {isAdmin && <td className="px-4 py-3">{socio.dni}</td>}
+                                <table className="w-full">
+                                    <thead className="bg-gray-100">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left">Nombre</th>
+                                            <th className="px-4 py-2 text-left">Email</th>
+                                            <th className="px-4 py-2 text-left">Teléfono</th>
+                                            {isAdmin && <th className="px-4 py-2 text-left">DNI</th>}
+                                            <th className="px-4 py-2 text-left">Cuota</th>
+                                            {isAdmin && <th className="px-4 py-2 text-left">Acciones</th>}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {socios.map(socio => (
+                                            <tr key={socio.id} className="border-b">
+                                                <td className="px-4 py-3">{socio.nombre} {socio.apellidos}</td>
+                                                <td className="px-4 py-3">{socio.email}</td>
+                                                <td className="px-4 py-3">{socio.telefono || '-'}</td>
+                                                {isAdmin && <td className="px-4 py-3">{socio.dni}</td>}
+                                                <td className="px-4 py-3">
+                                                    {socio.cuota_pagada ? (
+                                                        <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm">✓ Pagada {socio.fecha_pago && `(${socio.fecha_pago})`}</span>
+                                                    ) : (
+                                                        <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-sm">⏳ Pendiente</span>
+                                                    )}
+                                                </td>
+                                                {isAdmin && (
                                                     <td className="px-4 py-3">
-                                                        {socio.cuota_pagada ? (
-                                                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm">✓ Pagada {socio.fecha_pago && `(${socio.fecha_pago})`}</span>
-                                                        ) : (
-                                                            <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-sm">⏳ Pendiente</span>
+                                                        {!socio.cuota_pagada && (
+                                                            <button onClick={() => pagarCuota(socio.id)} className="btn-primary px-3 py-1 rounded text-sm">Marcar Pagada</button>
                                                         )}
                                                     </td>
-                                                    {isAdmin && (
-                                                        <td className="px-4 py-3">
-                                                            {!socio.cuota_pagada && (
-                                                                <button onClick={() => pagarCuota(socio.id)} className="btn-primary px-3 py-1 rounded text-sm">Marcar Pagada</button>
-                                                            )}
-                                                        </td>
-                                                    )}
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         )}
                         
@@ -750,7 +731,7 @@
                                                         <button onClick={() => eliminarSalida(salida.id)} className="text-red-600 hover:bg-red-50 px-3 py-1 rounded">🗑️</button>
                                                     )}
                                                 </div>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 md:gap-4 mb-3 text-sm">
+                                                <div className="grid md:grid-cols-3 gap-4 mb-3 text-sm">
                                                     {salida.distancia > 0 && <p>📏 Distancia: {salida.distancia} km</p>}
                                                     {salida.desnivel > 0 && <p>⛰️ Desnivel: {salida.desnivel} m</p>}
                                                     <p>🏁 Nivel: {salida.nivel}</p>
@@ -1012,51 +993,41 @@
                                             <button onClick={sincronizarStrava} className="btn-primary px-4 py-2 rounded mt-2">🔄 Sincronizar</button>
                                         </div>
                                         <h3 className="font-bold text-lg mb-3">Clasificación del Club</h3>
-                                        <div className="responsive-table">
-                                            <table className="w-full mobile-text-sm">
-                                                <thead className="bg-gray-100">
-                                                    <tr>
-                                                        <th className="px-4 py-2 text-left">Pos</th>
-                                                        <th className="px-4 py-2 text-left">Socio</th>
-                                                        <th className="px-4 py-2 text-left">KM Mes</th>
-                                                        <th className="px-4 py-2 text-left">KM Año</th>
-                                                        <th className="px-4 py-2 text-left">Desnivel</th>
-                                                        <th className="px-4 py-2 text-left">Salidas</th>
+                                        <table className="w-full">
+                                            <thead className="bg-gray-100">
+                                                <tr>
+                                                    <th className="px-4 py-2 text-left">Pos</th>
+                                                    <th className="px-4 py-2 text-left">Socio</th>
+                                                    <th className="px-4 py-2 text-left">KM Mes</th>
+                                                    <th className="px-4 py-2 text-left">KM Año</th>
+                                                    <th className="px-4 py-2 text-left">Desnivel</th>
+                                                    <th className="px-4 py-2 text-left">Salidas</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {stravaStats.sort((a, b) => b.km_mes - a.km_mes).map((stat, i) => (
+                                                    <tr key={stat.id} className="border-b">
+                                                        <td className="px-4 py-3">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</td>
+                                                        <td className="px-4 py-3">{stat.socios?.nombre} {stat.socios?.apellidos}</td>
+                                                        <td className="px-4 py-3">{stat.km_mes} km</td>
+                                                        <td className="px-4 py-3">{stat.km_ano} km</td>
+                                                        <td className="px-4 py-3">{stat.desnivel_mes} m</td>
+                                                        <td className="px-4 py-3">{stat.salidas_mes}</td>
                                                     </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {stravaStats.sort((a, b) => b.km_mes - a.km_mes).map((stat, i) => (
-                                                        <tr key={stat.id} className="border-b">
-                                                            <td className="px-4 py-3">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</td>
-                                                            <td className="px-4 py-3">{stat.socios?.nombre} {stat.socios?.apellidos}</td>
-                                                            <td className="px-4 py-3">{stat.km_mes} km</td>
-                                                            <td className="px-4 py-3">{stat.km_ano} km</td>
-                                                            <td className="px-4 py-3">{stat.desnivel_mes} m</td>
-                                                            <td className="px-4 py-3">{stat.salidas_mes}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                                ))}
+                                            </tbody>
+                                        </table>
                                     </div>
                                 ) : (
                                     <div className="text-center">
                                         {!stravaClientId && (
-                                            <div className="mb-4 p-4 bg-blue-50 rounded text-left">
-                                                <h3 className="font-bold mb-2">ℹ️ ¿Cómo conectar con Strava?</h3>
-                                                <p className="text-sm mb-2">Para conectar tu cuenta de Strava necesitas crear una aplicación API en Strava (solo para admin):</p>
-                                                <ol className="text-sm text-left list-decimal list-inside space-y-1 mb-3">
-                                                    <li>Ve a <a href="https://www.strava.com/settings/api" target="_blank" className="text-blue-600 underline">strava.com/settings/api</a></li>
-                                                    <li>Crea una nueva aplicación</li>
-                                                    <li>Copia el "Client ID" y "Client Secret"</li>
-                                                    <li>Pégalos aquí abajo</li>
-                                                </ol>
-                                                <p className="text-xs text-gray-600 italic">Nota: No son tus credenciales personales de Strava, sino las credenciales de la aplicación del club</p>
-                                                <button onClick={() => setMostrarConfigStrava(true)} className="btn-secondary px-4 py-2 rounded mt-3">⚙️ Configurar API</button>
+                                            <div className="mb-4 p-4 bg-yellow-50 rounded">
+                                                <p className="mb-2">Configura las credenciales de Strava primero</p>
+                                                <button onClick={() => setMostrarConfigStrava(true)} className="btn-secondary px-4 py-2 rounded">⚙️ Configurar</button>
                                             </div>
                                         )}
                                         {mostrarConfigStrava && (
-                                            <div className="mb-4 p-4 border rounded text-left">
+                                            <div className="mb-4 p-4 border rounded">
                                                 <h3 className="font-bold mb-3">Configurar Strava API</h3>
                                                 <input type="text" placeholder="Client ID (número)" value={stravaClientId}
                                                     onChange={(e) => setStravaClientId(e.target.value)}
@@ -1065,11 +1036,11 @@
                                                     onChange={(e) => setStravaClientSecret(e.target.value)}
                                                     className="w-full border rounded px-3 py-2 mb-2"/>
                                                 <button onClick={guardarCredencialesStrava} className="btn-primary px-4 py-2 rounded">💾 Guardar</button>
-                                                <p className="text-xs text-gray-500 mt-2">Obtén estas credenciales en <a href="https://www.strava.com/settings/api" target="_blank" className="text-blue-600 underline">strava.com/settings/api</a></p>
+                                                <p className="text-xs text-gray-500 mt-2">Obtén estas credenciales en strava.com/settings/api</p>
                                             </div>
                                         )}
-                                        <button onClick={conectarConStrava} disabled={!stravaClientId} className="bg-orange-500 text-white px-6 py-3 rounded text-lg hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed">
-                                            {stravaClientId ? 'Conectar con Strava' : 'Configura API primero'}
+                                        <button onClick={conectarConStrava} className="bg-orange-500 text-white px-6 py-3 rounded text-lg hover:bg-orange-600">
+                                            Conectar con Strava
                                         </button>
                                     </div>
                                 )}
