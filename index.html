@@ -96,6 +96,7 @@
             const [mostrarFormSalida, setMostrarFormSalida] = useState(false);
             const [nuevoProducto, setNuevoProducto] = useState({ nombre: '', precio: '', imagen: '', stock_xs: 0, stock_s: 0, stock_m: 0, stock_l: 0, stock_xl: 0, stock_xxl: 0 });
             const [mostrarFormProducto, setMostrarFormProducto] = useState(false);
+            const [productoEditando, setProductoEditando] = useState(null);
             const [compras, setCompras] = useState([]);
             const [verHistorial, setVerHistorial] = useState(false);
             const [logoClub, setLogoClub] = useState(localStorage.getItem('logo_club') || '');
@@ -335,6 +336,25 @@
                 const { error } = await supabase.from('productos').delete().eq('id', productoId);
                 if (error) alert('Error: ' + error.message);
                 else { alert('Producto eliminado'); loadAllData(); }
+            };
+
+            const actualizarProducto = async () => {
+                if (!isAdmin || !productoEditando) return;
+                const { error } = await supabase.from('productos').update({
+                    stock_xs: parseInt(productoEditando.stock_xs) || 0,
+                    stock_s: parseInt(productoEditando.stock_s) || 0,
+                    stock_m: parseInt(productoEditando.stock_m) || 0,
+                    stock_l: parseInt(productoEditando.stock_l) || 0,
+                    stock_xl: parseInt(productoEditando.stock_xl) || 0,
+                    stock_xxl: parseInt(productoEditando.stock_xxl) || 0
+                }).eq('id', productoEditando.id);
+                
+                if (error) alert('Error: ' + error.message);
+                else {
+                    alert('Stock actualizado');
+                    setProductoEditando(null);
+                    loadAllData();
+                }
             };
 
             const agregarAlCarrito = (producto, talla) => {
@@ -855,10 +875,16 @@
                                             {productos.map(producto => (
                                                 <div key={producto.id} className="border rounded-lg p-4 relative">
                                                     {isAdmin && (
-                                                        <button onClick={() => eliminarProducto(producto.id)} 
-                                                            className="absolute top-2 right-2 text-red-600 hover:bg-red-50 px-2 py-1 rounded text-sm">
-                                                            🗑️
-                                                        </button>
+                                                        <>
+                                                            <button onClick={() => eliminarProducto(producto.id)} 
+                                                                className="absolute top-2 right-12 text-red-600 hover:bg-red-50 px-2 py-1 rounded text-sm">
+                                                                🗑️
+                                                            </button>
+                                                            <button onClick={() => setProductoEditando({...producto})} 
+                                                                className="absolute top-2 right-2 text-blue-600 hover:bg-blue-50 px-2 py-1 rounded text-sm">
+                                                                ✏️
+                                                            </button>
+                                                        </>
                                                     )}
                                                     {producto.imagen ? (
                                                         <img src={producto.imagen} className="w-full h-48 object-cover rounded mb-3" alt={producto.nombre}/>
@@ -883,8 +909,38 @@
                                                         </div>
                                                     )}
                                                     {isAdmin && (
-                                                        <div className="mt-3 text-sm text-gray-600">
-                                                            <p>Stock: XS:{producto.stock_xs} S:{producto.stock_s} M:{producto.stock_m} L:{producto.stock_l} XL:{producto.stock_xl} XXL:{producto.stock_xxl}</p>
+                                                        <div className="mt-3">
+                                                            {productoEditando?.id === producto.id ? (
+                                                                <div className="border border-blue-300 rounded p-3 bg-blue-50">
+                                                                    <p className="font-semibold mb-2 text-sm">Editar Stock:</p>
+                                                                    <div className="grid grid-cols-3 gap-2 mb-3">
+                                                                        {['xs', 's', 'm', 'l', 'xl', 'xxl'].map(talla => (
+                                                                            <div key={talla}>
+                                                                                <label className="text-xs uppercase block mb-1">{talla}</label>
+                                                                                <input 
+                                                                                    type="number" 
+                                                                                    min="0" 
+                                                                                    value={productoEditando[`stock_${talla}`]}
+                                                                                    onChange={(e) => setProductoEditando({...productoEditando, [`stock_${talla}`]: e.target.value})}
+                                                                                    className="border rounded px-2 py-1 w-full text-sm"
+                                                                                />
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                    <div className="flex gap-2">
+                                                                        <button onClick={actualizarProducto} className="flex-1 btn-primary px-3 py-1 rounded text-sm">
+                                                                            💾 Guardar
+                                                                        </button>
+                                                                        <button onClick={() => setProductoEditando(null)} className="flex-1 bg-gray-500 text-white px-3 py-1 rounded text-sm hover:bg-gray-600">
+                                                                            Cancelar
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="text-sm text-gray-600">
+                                                                    <p>Stock: XS:{producto.stock_xs} S:{producto.stock_s} M:{producto.stock_m} L:{producto.stock_l} XL:{producto.stock_xl} XXL:{producto.stock_xxl}</p>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     )}
                                                 </div>
