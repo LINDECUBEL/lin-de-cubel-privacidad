@@ -194,13 +194,18 @@
                 if (comprasData) setCompras(comprasData);
             };
 
-            const loginAdmin = () => {
-                if (loginForm.password === ADMIN_PASSWORD) {
+            const loginAdmin = async () => {
+                const { error } = await supabase.auth.signInWithPassword({ 
+                    email: 'bttlindecubel@gmail.com', 
+                    password: loginForm.password 
+                });
+                if (error) {
+                    alert('Contraseña incorrecta');
+                } else {
                     setIsAdmin(true);
-                    setSession({ user: { email: 'admin' } });
                     setLoginView('select');
                     alert('¡Bienvenido Administrador!');
-                } else alert('Contraseña incorrecta');
+                }
             };
 
             const loginSocio = async () => {
