@@ -85,8 +85,8 @@
             const [productos, setProductos] = useState([]);
             const [inscripciones, setInscripciones] = useState([]);
             const [carrito, setCarrito] = useState([]);
-            const [stravaClientId, setStravaClientId] = useState(localStorage.getItem('strava_client_id') || '');
-            const [stravaClientSecret, setStravaClientSecret] = useState(localStorage.getItem('strava_client_secret') || '');
+            const [stravaClientId, setStravaClientId] = useState(localStorage.getItem('strava_client_id') || '198014');
+            const [stravaClientSecret, setStravaClientSecret] = useState(localStorage.getItem('strava_client_secret') || '7101f23847927703d9ad49e90aa90ab451da1a8');
             const [mostrarConfigStrava, setMostrarConfigStrava] = useState(false);
             const [stravaStats, setStravaStats] = useState([]);
             const [nuevaSalida, setNuevaSalida] = useState({ nombre: '', fecha: '', hora: '', distancia: '', desnivel: '', nivel: 'Intermedio', punto_encuentro: '' });
@@ -119,6 +119,16 @@
             };
 
             useEffect(() => { if (session) loadAllData(); }, [session]);
+            
+            // Guardar credenciales de Strava automáticamente en localStorage
+            useEffect(() => {
+                if (stravaClientId && !localStorage.getItem('strava_client_id')) {
+                    localStorage.setItem('strava_client_id', stravaClientId);
+                }
+                if (stravaClientSecret && !localStorage.getItem('strava_client_secret')) {
+                    localStorage.setItem('strava_client_secret', stravaClientSecret);
+                }
+            }, []);
             
             // Manejar callback de Strava OAuth
             useEffect(() => {
@@ -459,7 +469,10 @@
             const conectarConStrava = () => {
                 if (!stravaClientId) { alert('Configura credenciales primero'); setMostrarConfigStrava(true); return; }
                 const scope = 'read,activity:read_all,profile:read_all';
-                const redirectUri = window.location.origin + window.location.pathname;
+                const redirectUri = window.location.origin; // Sin barra final
+                console.log('🚴 Conectando con Strava...');
+                console.log('Client ID:', stravaClientId);
+                console.log('Redirect URI:', redirectUri);
                 window.location.href = `https://www.strava.com/oauth/authorize?client_id=${stravaClientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&approval_prompt=force&scope=${scope}`;
             };
 
