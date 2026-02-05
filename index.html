@@ -220,28 +220,44 @@
                     return;
                 }
                 
+                console.log('🔵 Iniciando registro para:', registerForm.email);
+                
                 // Verificar si ya existe en la tabla de socios
-                const { data: existingSocio } = await supabase.from('socios').select('*').eq('email', registerForm.email).single();
+                const { data: existingSocio, error: checkError } = await supabase.from('socios').select('*').eq('email', registerForm.email).single();
+                console.log('🔍 Verificación en tabla socios:', { existingSocio, checkError });
+                
                 if (existingSocio) {
                     alert('Este email ya está registrado. Usa "Soy Socio" para entrar.');
                     setLoginView('socio');
                     return;
                 }
                 
+                // Intentar crear usuario en Auth
                 const { data: authData, error: authError } = await supabase.auth.signUp({ 
                     email: registerForm.email, 
                     password: registerForm.password 
                 });
                 
-                if (authError) { 
-                    alert('Error en el registro: ' + authError.message); 
+                console.log('🔐 Resultado Auth signUp:', { authData, authError });
+                
+                if (authError) {
+                    // Si el usuario ya existe en Auth, dar instrucciones claras
+                    if (authError.message.includes('already registered') || authError.message.includes('already been registered')) {
+                        alert('⚠️ Este email ya tiene una cuenta creada.\n\nPor favor:\n1. Cierra este registro\n2. Selecciona "Soy Socio"\n3. Inicia sesión con tu email y contraseña\n\nSi no recuerdas tu contraseña, contacta con el administrador.');
+                    } else {
+                        alert('❌ Error en el registro: ' + authError.message + '\n\nContacta con el administrador: bttlindecubel@gmail.com');
+                    }
+                    console.error('❌ Error Auth:', authError);
                     return; 
                 }
                 
                 // Esperar un momento para que Auth se establezca
                 await new Promise(resolve => setTimeout(resolve, 500));
                 
-                const { error: socioError } = await supabase.from('socios').insert([{
+                console.log('💾 Insertando en tabla socios con user_id:', authData.user.id);
+                
+                // Intentar insertar en tabla socios
+                const { data: socioData, error: socioError } = await supabase.from('socios').insert([{
                     user_id: authData.user.id, 
                     nombre: registerForm.nombre, 
                     apellidos: registerForm.apellidos,
@@ -251,14 +267,18 @@
                     email: registerForm.email, 
                     direccion: registerForm.direccion, 
                     cuota_pagada: false
-                }]);
+                }]).select();
+                
+                console.log('💾 Resultado insert socios:', { socioData, socioError });
                 
                 if (socioError) {
-                    alert('Error al guardar datos: ' + socioError.message + '. Contacta al administrador con tu email.');
+                    console.error('❌ Error al guardar en socios:', socioError);
+                    alert('❌ Error al completar el registro: ' + socioError.message + '\n\nTu usuario se creó pero faltaron datos.\nContacta con el administrador: bttlindecubel@gmail.com\nIncluye tu email: ' + registerForm.email);
                     return;
                 }
                 
-                alert('¡Registro exitoso! Ahora puedes iniciar sesión.');
+                console.log('✅ Registro completado exitosamente');
+                alert('✅ ¡Registro exitoso!\n\nYa puedes iniciar sesión con tu email y contraseña.');
                 setLoginView('socio');
                 setRegisterForm({ email: '', password: '', nombre: '', apellidos: '', dni: '', telefono: '', fechaNacimiento: '', direccion: '' });
             };
