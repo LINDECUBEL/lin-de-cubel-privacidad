@@ -214,19 +214,48 @@
                     alert('Completa los campos obligatorios');
                     return;
                 }
-                const { data: authData, error: authError } = await supabase.auth.signUp({ email: registerForm.email, password: registerForm.password });
-                if (authError) { alert('Error: ' + authError.message); return; }
-                const { error: socioError } = await supabase.from('socios').insert([{
-                    user_id: authData.user.id, nombre: registerForm.nombre, apellidos: registerForm.apellidos,
-                    dni: registerForm.dni, telefono: registerForm.telefono, fecha_nacimiento: registerForm.fechaNacimiento,
-                    email: registerForm.email, direccion: registerForm.direccion, cuota_pagada: false
-                }]);
-                if (socioError) alert('Error: ' + socioError.message);
-                else {
-                    alert('¡Registro exitoso!');
+                
+                // Verificar si ya existe en la tabla de socios
+                const { data: existingSocio } = await supabase.from('socios').select('*').eq('email', registerForm.email).single();
+                if (existingSocio) {
+                    alert('Este email ya está registrado. Usa "Soy Socio" para entrar.');
                     setLoginView('socio');
-                    setRegisterForm({ email: '', password: '', nombre: '', apellidos: '', dni: '', telefono: '', fechaNacimiento: '', direccion: '' });
+                    return;
                 }
+                
+                const { data: authData, error: authError } = await supabase.auth.signUp({ 
+                    email: registerForm.email, 
+                    password: registerForm.password 
+                });
+                
+                if (authError) { 
+                    alert('Error en el registro: ' + authError.message); 
+                    return; 
+                }
+                
+                // Esperar un momento para que Auth se establezca
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                const { error: socioError } = await supabase.from('socios').insert([{
+                    user_id: authData.user.id, 
+                    nombre: registerForm.nombre, 
+                    apellidos: registerForm.apellidos,
+                    dni: registerForm.dni, 
+                    telefono: registerForm.telefono, 
+                    fecha_nacimiento: registerForm.fechaNacimiento,
+                    email: registerForm.email, 
+                    direccion: registerForm.direccion, 
+                    cuota_pagada: false
+                }]);
+                
+                if (socioError) {
+                    alert('Error al guardar datos: ' + socioError.message + '. Contacta al administrador con tu email.');
+                    return;
+                }
+                
+                alert('¡Registro exitoso! Ahora puedes iniciar sesión.');
+                setLoginView('socio');
+                setRegisterForm({ email: '', password: '', nombre: '', apellidos: '', dni: '', telefono: '', fechaNacimiento: '', direccion: '' });
             };
 
             const logout = async () => {
@@ -358,10 +387,26 @@
                     await supabase.from('productos').update({ [stockField]: producto[stockField] - 1 }).eq('id', item.productoId);
                 }
                 const total = carrito.reduce((sum, item) => sum + item.precio, 0);
-                await supabase.from('compras').insert([{ socio_id: currentSocio?.id, total, items: JSON.stringify(carrito) }]);
+                await supabase.from('compras').insert([{ 
+                    socio_id: currentSocio?.id, 
+                    total, 
+                    items: JSON.stringify(carrito),
+                    fecha: new Date().toISOString().split('T')[0],
+                    preparado: false
+                }]);
                 alert(`Compra procesada: ${total}€`);
                 setCarrito([]);
                 loadAllData();
+            };
+
+            const marcarPedidoPreparado = async (compraId) => {
+                if (!isAdmin) return;
+                const { error } = await supabase.from('compras').update({ preparado: true }).eq('id', compraId);
+                if (error) alert('Error: ' + error.message);
+                else {
+                    alert('Pedido marcado como preparado');
+                    loadAllData();
+                }
             };
 
             const guardarCredencialesStrava = () => {
@@ -415,11 +460,7 @@
                     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-corp-primary to-corp-dark">
                         <div className="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full mx-4">
                             <div className="text-center mb-8">
-                                <svg width="100" height="100" viewBox="0 0 200 200" className="mx-auto mb-4">
-                                    <circle cx="60" cy="100" r="35" fill="none" stroke="#a4c639" strokeWidth="12"/>
-                                    <circle cx="140" cy="100" r="35" fill="none" stroke="#a4c639" strokeWidth="12"/>
-                                    <path d="M 85 75 Q 100 60 115 75" fill="none" stroke="#a4c639" strokeWidth="12" strokeLinecap="round"/>
-                                </svg>
+                                <img src="data:image/jpeg;base64,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" alt="Lin de Cubel" className="mx-auto mb-4 w-40 h-auto" />
                                 <h1 className="text-3xl font-bold text-corp-secondary mb-2">LIN DE CUBEL</h1>
                                 <p className="text-gray-600">Sistema de Gestión del Club</p>
                             </div>
@@ -535,7 +576,14 @@
                                         </button>
                                     )}
                                     <div className="text-right">
-                                        <p className="text-sm font-semibold">{isAdmin ? 'Administrador' : currentSocio ? `${currentSocio.nombre} ${currentSocio.apellidos}` : 'Usuario'}</p>
+                                        <p className="text-sm font-semibold flex items-center gap-2 justify-end">
+                                            {isAdmin ? 'Administrador' : currentSocio ? `${currentSocio.nombre} ${currentSocio.apellidos}` : 'Usuario'}
+                                            {isAdmin && (socios.filter(s => !s.cuota_pagada).length + compras.filter(c => !c.preparado).length) > 0 && (
+                                                <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
+                                                    {socios.filter(s => !s.cuota_pagada).length + compras.filter(c => !c.preparado).length}
+                                                </span>
+                                            )}
+                                        </p>
                                         <p className="text-xs opacity-75">{isAdmin ? '🔐 Admin' : '👤 Socio'}</p>
                                     </div>
                                     <button onClick={logout} className="bg-red-600 px-4 py-2 rounded text-sm hover:bg-red-700">Salir</button>
@@ -599,9 +647,19 @@
                     <nav className="bg-white shadow-md sticky top-0 z-10">
                         <div className="overflow-x-auto scrollbar-hide">
                             <div className="flex gap-0 min-w-max px-4">
-                                {['socios', 'salidas', 'tienda', 'strava'].map(tab => (
+                                {(isAdmin ? ['pendientes', 'socios', 'salidas', 'tienda', 'strava'] : ['socios', 'salidas', 'tienda', 'strava']).map(tab => (
                                     <button key={tab} onClick={() => setActiveTab(tab)}
-                                        className={`px-6 py-3 font-semibold transition whitespace-nowrap text-sm md:text-base ${activeTab === tab ? 'border-b-4 border-corp-primary text-corp-primary' : 'text-gray-600 hover:text-corp-primary'}`}>
+                                        className={`px-6 py-3 font-semibold transition whitespace-nowrap text-sm md:text-base ${activeTab === tab ? 'border-b-4 border-corp-primary text-corp-primary' : 'text-gray-600 hover:text-corp-primary'} relative`}>
+                                        {tab === 'pendientes' && (
+                                            <>
+                                                📋 Pendientes
+                                                {(socios.filter(s => !s.cuota_pagada).length + compras.filter(c => !c.preparado).length) > 0 && (
+                                                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                                                        {socios.filter(s => !s.cuota_pagada).length + compras.filter(c => !c.preparado).length}
+                                                    </span>
+                                                )}
+                                            </>
+                                        )}
                                         {tab === 'socios' && '👥 Socios'}
                                         {tab === 'salidas' && '🚴 Salidas'}
                                         {tab === 'tienda' && '🛒 Tienda'}
@@ -613,6 +671,141 @@
                     </nav>
                     
                     <main className="container mx-auto px-4 py-8">
+                        {activeTab === 'pendientes' && isAdmin && (
+                            <div className="space-y-6">
+                                {/* Sección Cuotas Pendientes */}
+                                <div className="bg-white rounded-lg shadow p-6">
+                                    <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                                        💰 Cuotas Pendientes
+                                        {socios.filter(s => !s.cuota_pagada).length > 0 && (
+                                            <span className="bg-yellow-500 text-white text-sm px-3 py-1 rounded-full">
+                                                {socios.filter(s => !s.cuota_pagada).length}
+                                            </span>
+                                        )}
+                                    </h2>
+                                    
+                                    {socios.filter(s => !s.cuota_pagada).length === 0 ? (
+                                        <div className="text-center py-8 text-gray-500">
+                                            <p className="text-4xl mb-2">✅</p>
+                                            <p>Todas las cuotas están pagadas</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {socios.filter(s => !s.cuota_pagada).map(socio => (
+                                                <div key={socio.id} className="border border-yellow-300 rounded-lg p-4 bg-yellow-50 flex justify-between items-center">
+                                                    <div>
+                                                        <p className="font-semibold text-lg">{socio.nombre} {socio.apellidos}</p>
+                                                        <p className="text-sm text-gray-600">{socio.email}</p>
+                                                        <p className="text-sm text-gray-600">DNI: {socio.dni}</p>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => pagarCuota(socio.id)} 
+                                                        className="btn-primary px-4 py-2 rounded whitespace-nowrap">
+                                                        ✓ Marcar Pagada (20€)
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Sección Pedidos Nuevos */}
+                                <div className="bg-white rounded-lg shadow p-6">
+                                    <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                                        📦 Pedidos Pendientes
+                                        {compras.filter(c => !c.preparado).length > 0 && (
+                                            <span className="bg-red-500 text-white text-sm px-3 py-1 rounded-full">
+                                                {compras.filter(c => !c.preparado).length}
+                                            </span>
+                                        )}
+                                    </h2>
+                                    
+                                    {compras.filter(c => !c.preparado).length === 0 ? (
+                                        <div className="text-center py-8 text-gray-500">
+                                            <p className="text-4xl mb-2">📭</p>
+                                            <p>No hay pedidos pendientes</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {compras.filter(c => !c.preparado).map(compra => {
+                                                const items = JSON.parse(compra.items);
+                                                const socio = socios.find(s => s.id === compra.socio_id);
+                                                return (
+                                                    <div key={compra.id} className="border border-red-300 rounded-lg p-4 bg-red-50">
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div>
+                                                                <p className="font-semibold text-lg">🆕 Pedido #{compra.id.substring(0, 8)}</p>
+                                                                <p className="text-sm text-gray-600">Cliente: {socio?.nombre} {socio?.apellidos}</p>
+                                                                <p className="text-sm text-gray-600">📅 {compra.fecha}</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-2xl font-bold text-corp-primary">{compra.total}€</p>
+                                                                <button 
+                                                                    onClick={() => marcarPedidoPreparado(compra.id)} 
+                                                                    className="btn-primary px-4 py-2 rounded mt-2 text-sm">
+                                                                    ✓ Marcar Preparado
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        <div className="border-t border-red-200 pt-3 mt-3">
+                                                            <p className="font-semibold text-sm mb-2">Artículos:</p>
+                                                            <div className="space-y-1">
+                                                                {items.map((item, i) => (
+                                                                    <div key={i} className="flex justify-between text-sm bg-white p-2 rounded">
+                                                                        <span>{item.nombre} - Talla {item.talla}</span>
+                                                                        <span className="font-semibold">{item.precio}€</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Sección Pedidos Preparados (Historial) */}
+                                <div className="bg-white rounded-lg shadow p-6">
+                                    <h2 className="text-2xl font-bold mb-4">✅ Pedidos Preparados</h2>
+                                    
+                                    {compras.filter(c => c.preparado).length === 0 ? (
+                                        <div className="text-center py-8 text-gray-500">
+                                            <p className="text-4xl mb-2">📦</p>
+                                            <p>No hay pedidos preparados aún</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {compras.filter(c => c.preparado).slice(0, 5).map(compra => {
+                                                const items = JSON.parse(compra.items);
+                                                const socio = socios.find(s => s.id === compra.socio_id);
+                                                return (
+                                                    <div key={compra.id} className="border rounded-lg p-4 bg-green-50">
+                                                        <div className="flex justify-between items-center">
+                                                            <div>
+                                                                <p className="font-semibold">Pedido #{compra.id.substring(0, 8)}</p>
+                                                                <p className="text-sm text-gray-600">{socio?.nombre} {socio?.apellidos} - {compra.fecha}</p>
+                                                                <p className="text-xs text-gray-500">{items.length} artículo(s)</p>
+                                                            </div>
+                                                            <div className="text-right">
+                                                                <p className="text-xl font-bold text-green-600">{compra.total}€</p>
+                                                                <p className="text-xs text-green-600">✓ Preparado</p>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                            {compras.filter(c => c.preparado).length > 5 && (
+                                                <p className="text-center text-sm text-gray-500 pt-2">
+                                                    ... y {compras.filter(c => c.preparado).length - 5} más
+                                                </p>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        
                         {activeTab === 'socios' && (
                             <div className="bg-white rounded-lg shadow p-6">
                                 <h2 className="text-2xl font-bold mb-4">Socios del Club</h2>
