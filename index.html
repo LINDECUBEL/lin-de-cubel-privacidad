@@ -9,6 +9,7 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
         body { 
@@ -298,6 +299,93 @@
                 else await supabase.auth.signOut();
                 setActiveTab('socios');
             };
+
+            // ======== FUNCIONES DE EXPORTACIÓN A EXCEL ========
+            
+            const exportarSociosExcel = () => {
+                if (!isAdmin) return;
+                
+                // Preparar datos para Excel
+                const datosExcel = socios.map(socio => ({
+                    'Nombre': socio.nombre,
+                    'Apellidos': socio.apellidos,
+                    'Email': socio.email,
+                    'DNI': socio.dni,
+                    'Teléfono': socio.telefono,
+                    'Fecha Nacimiento': socio.fecha_nacimiento,
+                    'Dirección': socio.direccion,
+                    'Cuota Pagada': socio.cuota_pagada ? 'SÍ' : 'NO',
+                    'Fecha Pago': socio.fecha_pago || '-',
+                    'Fecha Registro': new Date(socio.created_at).toLocaleDateString()
+                }));
+                
+                // Crear hoja de Excel
+                const ws = XLSX.utils.json_to_sheet(datosExcel);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Socios');
+                
+                // Descargar archivo
+                XLSX.writeFile(wb, `Socios_LinDeCubel_${new Date().toLocaleDateString()}.xlsx`);
+                alert('✅ Listado de socios exportado correctamente');
+            };
+            
+            const exportarInscritosExcel = (salidaId) => {
+                if (!isAdmin) return;
+                
+                const salida = salidas.find(s => s.id === salidaId);
+                if (!salida) return;
+                
+                const inscritos = inscripciones.filter(i => i.salida_id === salidaId);
+                const datosExcel = inscritos.map(inscripcion => {
+                    const socio = socios.find(s => s.id === inscripcion.socio_id);
+                    return {
+                        'Nombre': socio?.nombre || '-',
+                        'Apellidos': socio?.apellidos || '-',
+                        'Email': socio?.email || '-',
+                        'Teléfono': socio?.telefono || '-',
+                        'Cuota Pagada': socio?.cuota_pagada ? 'SÍ' : 'NO'
+                    };
+                });
+                
+                const ws = XLSX.utils.json_to_sheet(datosExcel);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Inscritos');
+                
+                const nombreArchivo = `Inscritos_${salida.nombre.replace(/\s/g, '_')}_${new Date().toLocaleDateString()}.xlsx`;
+                XLSX.writeFile(wb, nombreArchivo);
+                alert(`✅ Inscritos a "${salida.nombre}" exportados correctamente`);
+            };
+            
+            const exportarPedidosExcel = () => {
+                if (!isAdmin) return;
+                
+                const datosExcel = compras.map(compra => {
+                    const socio = socios.find(s => s.id === compra.socio_id);
+                    const items = JSON.parse(compra.items);
+                    const articulosTexto = items.map(item => `${item.nombre} (${item.talla})`).join(', ');
+                    
+                    return {
+                        'ID Pedido': compra.id.substring(0, 8),
+                        'Fecha': compra.fecha,
+                        'Cliente': socio ? `${socio.nombre} ${socio.apellidos}` : '-',
+                        'Email': socio?.email || '-',
+                        'Teléfono': socio?.telefono || '-',
+                        'Artículos': articulosTexto,
+                        'Total': `${compra.total}€`,
+                        'Estado': compra.preparado ? 'PREPARADO' : 'PENDIENTE'
+                    };
+                });
+                
+                const ws = XLSX.utils.json_to_sheet(datosExcel);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Pedidos');
+                
+                XLSX.writeFile(wb, `Pedidos_LinDeCubel_${new Date().toLocaleDateString()}.xlsx`);
+                alert('✅ Pedidos exportados correctamente');
+            };
+            
+            // ======== FIN FUNCIONES DE EXPORTACIÓN ========
+
 
             const pagarCuota = async (socioId) => {
                 const { error } = await supabase.from('socios').update({ cuota_pagada: true, fecha_pago: new Date().toISOString().split('T')[0] }).eq('id', socioId);
@@ -801,14 +889,21 @@
 
                                 {/* Sección Pedidos Nuevos */}
                                 <div className="bg-white rounded-lg shadow p-6">
-                                    <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                                        📦 Pedidos Pendientes
-                                        {compras.filter(c => !c.preparado).length > 0 && (
-                                            <span className="bg-red-500 text-white text-sm px-3 py-1 rounded-full">
-                                                {compras.filter(c => !c.preparado).length}
-                                            </span>
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h2 className="text-2xl font-bold flex items-center gap-2">
+                                            📦 Pedidos Pendientes
+                                            {compras.filter(c => !c.preparado).length > 0 && (
+                                                <span className="bg-red-500 text-white text-sm px-3 py-1 rounded-full">
+                                                    {compras.filter(c => !c.preparado).length}
+                                                </span>
+                                            )}
+                                        </h2>
+                                        {compras.length > 0 && (
+                                            <button onClick={exportarPedidosExcel} className="btn-primary px-4 py-2 rounded text-sm flex items-center gap-2">
+                                                📊 Exportar Todos
+                                            </button>
                                         )}
-                                    </h2>
+                                    </div>
                                     
                                     {compras.filter(c => !c.preparado).length === 0 ? (
                                         <div className="text-center py-8 text-gray-500">
@@ -905,7 +1000,14 @@
                         
                         {activeTab === 'socios' && (
                             <div className="bg-white rounded-lg shadow p-6">
-                                <h2 className="text-2xl font-bold mb-4">Socios del Club</h2>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h2 className="text-2xl font-bold">Socios del Club</h2>
+                                    {isAdmin && (
+                                        <button onClick={exportarSociosExcel} className="btn-primary px-4 py-2 rounded text-sm flex items-center gap-2">
+                                            📊 Exportar a Excel
+                                        </button>
+                                    )}
+                                </div>
                                 <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                                     <h3 className="font-semibold text-lg mb-3">💰 Información de Pago</h3>
                                     <div className="grid md:grid-cols-2 gap-4 text-sm">
@@ -1030,7 +1132,14 @@
                                                 
                                                 {/* Lista de inscritos */}
                                                 <div className="mb-3 p-3 bg-gray-50 rounded">
-                                                    <p className="font-semibold text-sm mb-2">👥 Inscritos ({inscritos.length}):</p>
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <p className="font-semibold text-sm">👥 Inscritos ({inscritos.length}):</p>
+                                                        {isAdmin && inscritos.length > 0 && (
+                                                            <button onClick={() => exportarInscritosExcel(salida.id)} className="btn-primary px-3 py-1 rounded text-xs">
+                                                                📊 Exportar
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                     {sociosInscritos.length > 0 ? (
                                                         <div className="flex flex-wrap gap-2">
                                                             {sociosInscritos.map(socio => (
