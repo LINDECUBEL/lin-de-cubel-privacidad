@@ -139,8 +139,12 @@
                 
                 console.log('🚴 Verificando callback de Strava:', { code: code?.substring(0, 10) + '...', scope, currentSocio: currentSocio?.id, connected: currentSocio?.strava_connected });
                 
-                if (code && scope && currentSocio) {
+                // Solo verificar code y currentSocio (Strava no siempre devuelve scope en la URL)
+                if (code && currentSocio) {
                     console.log('🚴 Procesando código de Strava...');
+                    
+                    // Limpiar URL inmediatamente para evitar reprocesamiento
+                    window.history.replaceState({}, document.title, window.location.pathname);
                     
                     // Intercambiar código por token
                     fetch('https://www.strava.com/oauth/token', {
@@ -183,9 +187,6 @@
                                 if (updatedSocio) {
                                     setCurrentSocio(updatedSocio);
                                 }
-                                
-                                // Limpiar URL
-                                window.history.replaceState({}, document.title, window.location.pathname);
                                 
                                 alert('✅ ¡Conectado con Strava!\n\nAhora haz clic en "🔄 Sincronizar" para ver tus estadísticas.');
                                 loadAllData();
