@@ -137,7 +137,11 @@
                 const code = urlParams.get('code');
                 const scope = urlParams.get('scope');
                 
-                if (code && scope && currentSocio && !currentSocio.strava_connected) {
+                console.log('🚴 Verificando callback de Strava:', { code: code?.substring(0, 10) + '...', scope, currentSocio: currentSocio?.id, connected: currentSocio?.strava_connected });
+                
+                if (code && scope && currentSocio) {
+                    console.log('🚴 Procesando código de Strava...');
+                    
                     // Intercambiar código por token
                     fetch('https://www.strava.com/oauth/token', {
                         method: 'POST',
@@ -151,7 +155,11 @@
                     })
                     .then(res => res.json())
                     .then(async (data) => {
+                        console.log('🚴 Respuesta de Strava:', data);
+                        
                         if (data.access_token) {
+                            console.log('✅ Token recibido, guardando en Supabase...');
+                            
                             // Guardar token en Supabase
                             const { error } = await supabase.from('socios').update({
                                 strava_connected: true,
@@ -159,6 +167,8 @@
                                 strava_access_token: data.access_token,
                                 strava_refresh_token: data.refresh_token
                             }).eq('id', currentSocio.id);
+                            
+                            console.log('💾 Resultado guardar:', { error });
                             
                             if (!error) {
                                 // Recargar datos del usuario
@@ -168,6 +178,8 @@
                                     .eq('id', currentSocio.id)
                                     .single();
                                 
+                                console.log('🔄 Socio actualizado:', updatedSocio);
+                                
                                 if (updatedSocio) {
                                     setCurrentSocio(updatedSocio);
                                 }
@@ -175,17 +187,20 @@
                                 // Limpiar URL
                                 window.history.replaceState({}, document.title, window.location.pathname);
                                 
-                                alert('¡Conectado con Strava! Ahora haz clic en "🔄 Sincronizar" para ver tus estadísticas.');
+                                alert('✅ ¡Conectado con Strava!\n\nAhora haz clic en "🔄 Sincronizar" para ver tus estadísticas.');
                                 loadAllData();
                             } else {
-                                alert('Error al guardar conexión: ' + error.message);
+                                console.error('❌ Error al guardar:', error);
+                                alert('❌ Error al guardar conexión: ' + error.message);
                             }
                         } else {
-                            alert('Error de Strava: ' + (data.message || data.errors?.[0]?.field + ' - ' + data.errors?.[0]?.code || 'Verifica tus credenciales'));
+                            console.error('❌ Error en respuesta de Strava:', data);
+                            alert('❌ Error de Strava: ' + (data.message || data.errors?.[0]?.field + ' - ' + data.errors?.[0]?.code || 'Verifica tus credenciales'));
                         }
                     })
                     .catch(error => {
-                        alert('Error al conectar: ' + error.message);
+                        console.error('❌ Error en fetch:', error);
+                        alert('❌ Error al conectar: ' + error.message);
                     });
                 }
             }, [currentSocio, stravaClientId, stravaClientSecret]);
@@ -1014,7 +1029,7 @@
                                         <div>
                                             <p className="mb-2">Cuota anual: <span className="text-corp-primary text-xl font-bold">20€</span></p>
                                             <p className="mb-1"><strong>🏦 Transferencia:</strong></p>
-                                            <p className="font-mono text-sm bg-white px-3 py-2 rounded border">ES07 3059 0021 4429 2850 5722</p>
+                                            <p className="font-mono text-sm bg-white px-3 py-2 rounded border">ES07 3059 0021 4229 2850 5722</p>
                                         </div>
                                         <div>
                                             <p className="font-semibold mb-2">Concepto:</p>
