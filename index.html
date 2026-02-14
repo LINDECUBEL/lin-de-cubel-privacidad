@@ -66,7 +66,7 @@
 <body>
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
         const SUPABASE_URL = 'https://shyfjclxlnygysubehus.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNoeWZqY2x4bG55Z3lzdWJlaHVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAwMTYxMTcsImV4cCI6MjA4NTU5MjExN30.G3yt-lH_ef4n1qclC3Z54Cbj_n4bWOkfWvOMqJ22uEE';
         const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -90,7 +90,7 @@
             const [stravaClientSecret, setStravaClientSecret] = useState(localStorage.getItem('strava_client_secret') || '7101f23847927703d9ad49e90aa90ab451da1a8');
             const [mostrarConfigStrava, setMostrarConfigStrava] = useState(false);
             const [stravaStats, setStravaStats] = useState([]);
-            const [stravaCodeProcessing, setStravaCodeProcessing] = useState(false);
+            const stravaCodeProcessingRef = useRef(false);
             const [nuevaSalida, setNuevaSalida] = useState({ nombre: '', fecha: '', hora: '', distancia: '', desnivel: '', nivel: 'Intermedio', punto_encuentro: '' });
             const [mostrarFormSalida, setMostrarFormSalida] = useState(false);
             const [nuevoProducto, setNuevoProducto] = useState({ nombre: '', precio: '', imagen: '', stock_xs: 0, stock_s: 0, stock_m: 0, stock_l: 0, stock_xl: 0, stock_xxl: 0 });
@@ -138,15 +138,15 @@
                 const code = urlParams.get('code');
                 const scope = urlParams.get('scope');
                 
-                console.log('🚴 Verificando callback de Strava:', { code: code?.substring(0, 10) + '...', scope, currentSocio: currentSocio?.id, connected: currentSocio?.strava_connected, processing: stravaCodeProcessing });
+                console.log('🚴 Verificando callback de Strava:', { code: code?.substring(0, 10) + '...', scope, currentSocio: currentSocio?.id, connected: currentSocio?.strava_connected, processing: stravaCodeProcessingRef.current });
                 
                 // Solo verificar code y currentSocio (Strava no siempre devuelve scope en la URL)
                 // Y asegurarse de que no se está procesando ya
-                if (code && currentSocio && !stravaCodeProcessing) {
+                if (code && currentSocio && !stravaCodeProcessingRef.current) {
                     console.log('🚴 Procesando código de Strava...');
                     
                     // Marcar como procesando
-                    setStravaCodeProcessing(true);
+                    stravaCodeProcessingRef.current = true;
                     
                     // Limpiar URL inmediatamente para evitar reprocesamiento
                     window.history.replaceState({}, document.title, window.location.pathname);
@@ -195,25 +195,25 @@
                                 
                                 alert('✅ ¡Conectado con Strava!\n\nAhora haz clic en "🔄 Sincronizar" para ver tus estadísticas.');
                                 loadAllData();
-                                setStravaCodeProcessing(false);
+                                stravaCodeProcessingRef.current = false;
                             } else {
                                 console.error('❌ Error al guardar:', error);
                                 alert('❌ Error al guardar conexión: ' + error.message);
-                                setStravaCodeProcessing(false);
+                                stravaCodeProcessingRef.current = false;
                             }
                         } else {
                             console.error('❌ Error en respuesta de Strava:', data);
                             alert('❌ Error de Strava: ' + (data.message || 'Verifica tus credenciales'));
-                            setStravaCodeProcessing(false);
+                            stravaCodeProcessingRef.current = false;
                         }
                     })
                     .catch(error => {
                         console.error('❌ Error en fetch:', error);
                         alert('❌ Error al conectar: ' + error.message);
-                        setStravaCodeProcessing(false);
+                        stravaCodeProcessingRef.current = false;
                     });
                 }
-            }, [currentSocio, stravaClientId, stravaClientSecret, stravaCodeProcessing]);
+            }, [currentSocio, stravaClientId, stravaClientSecret]);
 
             const loadAllData = async () => {
                 const { data: sociosData } = await supabase.from('socios').select('*').order('created_at', { ascending: false });
