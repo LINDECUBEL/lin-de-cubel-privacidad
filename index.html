@@ -178,7 +178,8 @@
                             client_id: stravaClientId,
                             client_secret: stravaClientSecret,
                             code: pendingCode,
-                            grant_type: 'authorization_code'
+                            grant_type: 'authorization_code',
+                            redirect_uri: window.location.origin
                         })
                     })
                     .then(res => res.json())
