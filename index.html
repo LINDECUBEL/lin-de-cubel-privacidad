@@ -696,20 +696,49 @@
                         return;
                     }
                     
-                    // Obtener estadísticas usando el token activo (renovado o no)
+                    // Obtener estadísticas del AÑO (YTD - Year to Date)
                     const statsRes = await fetch(`https://www.strava.com/api/v3/athletes/${athlete.id}/stats`, {
                         headers: { 'Authorization': `Bearer ${tokenActivo}` }
                     });
-                    
                     const stats = await statsRes.json();
-                    const kmMes = Math.round((stats.recent_ride_totals?.distance || 0) / 1000);
                     const kmAno = Math.round((stats.ytd_ride_totals?.distance || 0) / 1000);
-                    const desnivelMes = Math.round(stats.recent_ride_totals?.elevation_gain || 0);
-                    const salidasMes = stats.recent_ride_totals?.count || 0;
+                    
+                    // Calcular inicio del mes actual (día 1 a las 00:00)
+                    const now = new Date();
+                    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+                    const timestampInicio = Math.floor(inicioMes.getTime() / 1000);
+                    
+                    // Obtener actividades del mes actual (página 1, máximo 200 actividades)
+                    const actividadesRes = await fetch(
+                        `https://www.strava.com/api/v3/athlete/activities?after=${timestampInicio}&per_page=200`,
+                        { headers: { 'Authorization': `Bearer ${tokenActivo}` } }
+                    );
+                    
+                    const actividades = await actividadesRes.json();
+                    
+                    // Filtrar solo actividades de tipo "Ride" (bicicleta) y sumar
+                    let kmMes = 0;
+                    let desnivelMes = 0;
+                    let salidasMes = 0;
+                    
+                    actividades.forEach(actividad => {
+                        if (actividad.type === 'Ride' || actividad.type === 'VirtualRide') {
+                            kmMes += actividad.distance || 0;
+                            desnivelMes += actividad.total_elevation_gain || 0;
+                            salidasMes++;
+                        }
+                    });
+                    
+                    // Convertir metros a kilómetros
+                    kmMes = Math.round(kmMes / 1000);
+                    desnivelMes = Math.round(desnivelMes);
                     
                     await supabase.from('strava_stats').upsert([{
-                        socio_id: currentSocio.id, km_mes: kmMes, km_ano: kmAno,
-                        desnivel_mes: desnivelMes, salidas_mes: salidasMes
+                        socio_id: currentSocio.id, 
+                        km_mes: kmMes, 
+                        km_ano: kmAno,
+                        desnivel_mes: desnivelMes, 
+                        salidas_mes: salidasMes
                     }], { onConflict: 'socio_id' });
                     
                     alert(`✅ Sincronizado!\nKm mes: ${kmMes}\nKm año: ${kmAno}`);
