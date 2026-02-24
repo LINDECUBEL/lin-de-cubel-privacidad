@@ -110,7 +110,7 @@
             const [inscripciones, setInscripciones] = useState([]);
             const [carrito, setCarrito] = useState([]);
             const [stravaClientId, setStravaClientId] = useState(localStorage.getItem('strava_client_id') || '198014');
-            const [stravaClientSecret, setStravaClientSecret] = useState(localStorage.getItem('strava_client_secret') || '7101f23847927703d9ad49e90aa90ab451da1a8');
+            const [stravaClientSecret, setStravaClientSecret] = useState(localStorage.getItem('strava_client_secret') || '548ff8c22c19845540c127de169de40737bedb95');
             const [mostrarConfigStrava, setMostrarConfigStrava] = useState(false);
             const [stravaStats, setStravaStats] = useState([]);
             const stravaCodeProcessingRef = useRef(false);
@@ -178,7 +178,8 @@
                             client_id: stravaClientId,
                             client_secret: stravaClientSecret,
                             code: pendingCode,
-                            grant_type: 'authorization_code'
+                            grant_type: 'authorization_code',
+                            redirect_uri: window.location.origin
                         })
                     })
                     .then(res => res.json())
@@ -231,7 +232,7 @@
             const loadAllData = async () => {
                 const { data: sociosData } = await supabase.from('socios').select('*').order('created_at', { ascending: false });
                 if (sociosData) setSocios(sociosData);
-                const { data: salidasData } = await supabase.from('salidas').select('*').order('fecha', { ascending: false });
+                const { data: salidasData } = await supabase.from('salidas').select('*, propuesta_por_socio:propuesta_por(nombre, apellidos)').order('fecha', { ascending: false });
                 if (salidasData) setSalidas(salidasData);
                 const { data: productosData } = await supabase.from('productos').select('*');
                 if (productosData) setProductos(productosData);
@@ -444,15 +445,54 @@
                     distancia: parseInt(nuevaSalida.distancia) || 0,
                     desnivel: parseInt(nuevaSalida.desnivel) || 0,
                     nivel: nuevaSalida.nivel,
-                    punto_encuentro: nuevaSalida.punto_encuentro
+                    punto_encuentro: nuevaSalida.punto_encuentro,
+                    propuesta_por: null // Salida oficial del admin
                 }]);
                 if (error) alert('Error: ' + error.message);
                 else {
-                    alert('Salida creada');
+                    alert('Salida oficial creada');
                     setNuevaSalida({ nombre: '', fecha: '', hora: '', distancia: '', desnivel: '', nivel: 'Intermedio', punto_encuentro: '' });
                     setMostrarFormSalida(false);
                     loadAllData();
                 }
+            };
+
+            const proponerSalida = async () => {
+                if (!currentSocio) return;
+                if (!nuevaSalida.nombre || !nuevaSalida.fecha || !nuevaSalida.hora) {
+                    alert('Completa los campos obligatorios');
+                    return;
+                }
+                const { error } = await supabase.from('salidas').insert([{
+                    nombre: nuevaSalida.nombre,
+                    fecha: nuevaSalida.fecha,
+                    hora: nuevaSalida.hora,
+                    distancia: parseInt(nuevaSalida.distancia) || 0,
+                    desnivel: parseInt(nuevaSalida.desnivel) || 0,
+                    nivel: nuevaSalida.nivel,
+                    punto_encuentro: nuevaSalida.punto_encuentro,
+                    propuesta_por: currentSocio.id // Propuesta del socio
+                }]);
+                if (error) alert('Error: ' + error.message);
+                else {
+                    alert('✅ Salida propuesta con éxito!\n\nTodos los socios pueden verla y apuntarse.');
+                    setNuevaSalida({ nombre: '', fecha: '', hora: '', distancia: '', desnivel: '', nivel: 'Intermedio', punto_encuentro: '' });
+                    setMostrarFormSalida(false);
+                    loadAllData();
+                }
+            };
+
+            const cancelarPropuesta = async (salidaId, propuestaPor) => {
+                // Solo el que propuso o el admin pueden cancelar/eliminar
+                if (!currentSocio && !isAdmin) return;
+                if (!isAdmin && currentSocio.id !== propuestaPor) {
+                    alert('Solo puedes cancelar tus propias propuestas');
+                    return;
+                }
+                if (!confirm('¿Cancelar esta salida?')) return;
+                const { error } = await supabase.from('salidas').delete().eq('id', salidaId);
+                if (error) alert('Error: ' + error.message);
+                else { alert('Salida cancelada'); loadAllData(); }
             };
 
             const inscribirseASalida = async (salidaId) => {
@@ -602,29 +642,172 @@
                 window.location.href = `https://www.strava.com/oauth/authorize?client_id=${stravaClientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&approval_prompt=force&scope=${scope}`;
             };
 
+            // Renovar token de Strava cuando expire
+            const refreshStravaToken = async () => {
+                if (!currentSocio?.strava_refresh_token) {
+                    console.error('No hay refresh_token disponible');
+                    return false;
+                }
+                
+                console.log('🔄 Renovando token de Strava...');
+                
+                try {
+                    const response = await fetch('https://www.strava.com/oauth/token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            client_id: stravaClientId,
+                            client_secret: stravaClientSecret,
+                            refresh_token: currentSocio.strava_refresh_token,
+                            grant_type: 'refresh_token'
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.access_token) {
+                        console.log('✅ Nuevo token obtenido');
+                        
+                        // Guardar nuevo token en Supabase
+                        const { error } = await supabase.from('socios').update({
+                            strava_access_token: data.access_token,
+                            strava_refresh_token: data.refresh_token
+                        }).eq('id', currentSocio.id);
+                        
+                        if (!error) {
+                            // Actualizar currentSocio con el nuevo token
+                            const { data: updatedSocio } = await supabase
+                                .from('socios')
+                                .select('*')
+                                .eq('id', currentSocio.id)
+                                .single();
+                            
+                            if (updatedSocio) {
+                                setCurrentSocio(updatedSocio);
+                                return data.access_token; // Devolver el nuevo token
+                            }
+                        } else {
+                            console.error('Error al guardar nuevo token:', error);
+                        }
+                    } else {
+                        console.error('Error al renovar token:', data);
+                    }
+                } catch (error) {
+                    console.error('Error en refreshStravaToken:', error);
+                }
+                
+                return false;
+            };
+
             const sincronizarStrava = async () => {
                 if (!currentSocio?.strava_access_token) { alert('Primero conecta con Strava'); return; }
+                
                 try {
-                    const athleteRes = await fetch('https://www.strava.com/api/v3/athlete', {
-                        headers: { 'Authorization': `Bearer ${currentSocio.strava_access_token}` }
+                    let tokenActivo = currentSocio.strava_access_token;
+                    
+                    // Intentar obtener datos del atleta
+                    let athleteRes = await fetch('https://www.strava.com/api/v3/athlete', {
+                        headers: { 'Authorization': `Bearer ${tokenActivo}` }
                     });
+                    
+                    // Si el token expiró (401), renovarlo automáticamente
+                    if (athleteRes.status === 401) {
+                        console.log('⚠️ Token expirado, renovando automáticamente...');
+                        const nuevoToken = await refreshStravaToken();
+                        
+                        if (nuevoToken) {
+                            tokenActivo = nuevoToken;
+                            // Reintentar con el nuevo token
+                            athleteRes = await fetch('https://www.strava.com/api/v3/athlete', {
+                                headers: { 'Authorization': `Bearer ${tokenActivo}` }
+                            });
+                        } else {
+                            alert('⚠️ Tu sesión de Strava expiró.\n\nPor favor, desconecta y vuelve a conectar con Strava.');
+                            return;
+                        }
+                    }
+                    
                     const athlete = await athleteRes.json();
+                    
+                    // Verificar si la respuesta es válida
+                    if (!athlete.id) {
+                        alert('Error al obtener datos de Strava. Por favor, intenta conectar de nuevo.');
+                        return;
+                    }
+                    
+                    // Obtener estadísticas del AÑO (YTD - Year to Date)
                     const statsRes = await fetch(`https://www.strava.com/api/v3/athletes/${athlete.id}/stats`, {
-                        headers: { 'Authorization': `Bearer ${currentSocio.strava_access_token}` }
+                        headers: { 'Authorization': `Bearer ${tokenActivo}` }
                     });
                     const stats = await statsRes.json();
-                    const kmMes = Math.round((stats.recent_ride_totals?.distance || 0) / 1000);
                     const kmAno = Math.round((stats.ytd_ride_totals?.distance || 0) / 1000);
-                    const desnivelMes = Math.round(stats.recent_ride_totals?.elevation_gain || 0);
-                    const salidasMes = stats.recent_ride_totals?.count || 0;
+                    
+                    // Calcular inicio del mes actual (día 1 a las 00:00)
+                    const now = new Date();
+                    const inicioMes = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+                    const timestampInicio = Math.floor(inicioMes.getTime() / 1000);
+                    
+                    // Obtener actividades del mes actual (página 1, máximo 200 actividades)
+                    let actividadesRes = await fetch(
+                        `https://www.strava.com/api/v3/athlete/activities?after=${timestampInicio}&per_page=200`,
+                        { headers: { 'Authorization': `Bearer ${tokenActivo}` } }
+                    );
+                    
+                    // Si el token expiró al obtener actividades, renovar
+                    if (actividadesRes.status === 401) {
+                        console.log('⚠️ Token expiró al obtener actividades, renovando...');
+                        const nuevoToken = await refreshStravaToken();
+                        if (nuevoToken) {
+                            tokenActivo = nuevoToken;
+                            actividadesRes = await fetch(
+                                `https://www.strava.com/api/v3/athlete/activities?after=${timestampInicio}&per_page=200`,
+                                { headers: { 'Authorization': `Bearer ${tokenActivo}` } }
+                            );
+                        } else {
+                            alert('⚠️ Error al renovar sesión de Strava.\n\nPor favor, reconecta con Strava.');
+                            return;
+                        }
+                    }
+                    
+                    let actividades = await actividadesRes.json();
+                    
+                    // Validar que sea un array antes de procesar
+                    if (!Array.isArray(actividades)) {
+                        console.error('Error: Strava no devolvió actividades:', actividades);
+                        alert('⚠️ Error al obtener actividades de Strava.\n\nPor favor, reconecta con Strava.');
+                        return;
+                    }
+                    
+                    // Filtrar solo actividades de tipo "Ride" (bicicleta) y sumar
+                    let kmMes = 0;
+                    let desnivelMes = 0;
+                    let salidasMes = 0;
+                    
+                    actividades.forEach(actividad => {
+                        if (actividad.type === 'Ride' || actividad.type === 'VirtualRide') {
+                            kmMes += actividad.distance || 0;
+                            desnivelMes += actividad.total_elevation_gain || 0;
+                            salidasMes++;
+                        }
+                    });
+                    
+                    // Convertir metros a kilómetros
+                    kmMes = Math.round(kmMes / 1000);
+                    desnivelMes = Math.round(desnivelMes);
+                    
                     await supabase.from('strava_stats').upsert([{
-                        socio_id: currentSocio.id, km_mes: kmMes, km_ano: kmAno,
-                        desnivel_mes: desnivelMes, salidas_mes: salidasMes
+                        socio_id: currentSocio.id, 
+                        km_mes: kmMes, 
+                        km_ano: kmAno,
+                        desnivel_mes: desnivelMes, 
+                        salidas_mes: salidasMes
                     }], { onConflict: 'socio_id' });
-                    alert(`Sincronizado!\nKm mes: ${kmMes}\nKm año: ${kmAno}`);
+                    
+                    alert(`✅ Sincronizado!\nKm mes: ${kmMes}\nKm año: ${kmAno}`);
                     loadAllData();
                 } catch (error) {
-                    alert('Error: ' + error.message);
+                    console.error('Error en sincronizarStrava:', error);
+                    alert('Error al sincronizar: ' + error.message);
                 }
             };
 
@@ -1104,16 +1287,28 @@
                             <div className="bg-white rounded-lg shadow p-6">
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="text-2xl font-bold">Salidas Programadas</h2>
-                                    {isAdmin && (
-                                        <button onClick={() => setMostrarFormSalida(!mostrarFormSalida)} className="btn-primary px-4 py-2 rounded">
-                                            {mostrarFormSalida ? '✕ Cancelar' : '➕ Nueva Salida'}
-                                        </button>
-                                    )}
+                                    <div className="flex gap-2">
+                                        {isAdmin && (
+                                            <button onClick={() => setMostrarFormSalida(!mostrarFormSalida)} className="btn-primary px-4 py-2 rounded">
+                                                {mostrarFormSalida ? '✕ Cancelar' : '➕ Nueva Salida Oficial'}
+                                            </button>
+                                        )}
+                                        {!isAdmin && currentSocio && (
+                                            <button onClick={() => setMostrarFormSalida(!mostrarFormSalida)} className="btn-secondary px-4 py-2 rounded">
+                                                {mostrarFormSalida ? '✕ Cancelar' : '💡 Proponer Salida'}
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                                 
-                                {mostrarFormSalida && isAdmin && (
+                                {mostrarFormSalida && (
                                     <div className="mb-6 p-4 bg-corp-bg-pale rounded-lg">
-                                        <h3 className="font-bold mb-3">Crear Nueva Salida</h3>
+                                        <h3 className="font-bold mb-3">{isAdmin ? 'Crear Nueva Salida Oficial' : 'Proponer una Salida'}</h3>
+                                        {!isAdmin && (
+                                            <p className="text-sm text-gray-600 mb-3">
+                                                💡 Propón una salida y todos los socios podrán verla y apuntarse
+                                            </p>
+                                        )}
                                         <div className="grid md:grid-cols-2 gap-3">
                                             <input type="text" placeholder="Nombre de la salida *" value={nuevaSalida.nombre}
                                                 onChange={(e) => setNuevaSalida({...nuevaSalida, nombre: e.target.value})}
@@ -1141,7 +1336,11 @@
                                                 onChange={(e) => setNuevaSalida({...nuevaSalida, punto_encuentro: e.target.value})}
                                                 className="border rounded px-3 py-2 md:col-span-2"/>
                                         </div>
-                                        <button onClick={crearSalida} className="btn-primary px-6 py-2 rounded mt-3">Crear Salida</button>
+                                        <button 
+                                            onClick={isAdmin ? crearSalida : proponerSalida} 
+                                            className={`px-6 py-2 rounded mt-3 ${isAdmin ? 'btn-primary' : 'btn-secondary'}`}>
+                                            {isAdmin ? 'Crear Salida Oficial' : '💡 Proponer Salida'}
+                                        </button>
                                     </div>
                                 )}
                                 
@@ -1150,16 +1349,38 @@
                                         const inscritos = inscripciones.filter(i => i.salida_id === salida.id);
                                         const sociosInscritos = inscritos.map(i => socios.find(s => s.id === i.socio_id)).filter(Boolean);
                                         const estaInscrito = inscritos.some(i => i.socio_id === currentSocio?.id);
+                                        const esOficial = !salida.propuesta_por;
+                                        const esMiPropuesta = salida.propuesta_por === currentSocio?.id;
+                                        const nombreProponente = salida.propuesta_por_socio ? `${salida.propuesta_por_socio.nombre} ${salida.propuesta_por_socio.apellidos}` : null;
+                                        
                                         return (
-                                            <div key={salida.id} className="border rounded-lg p-4">
+                                            <div key={salida.id} className={`border rounded-lg p-4 ${esOficial ? 'border-corp-primary bg-corp-bg-light' : 'border-gray-300'}`}>
                                                 <div className="flex justify-between items-start mb-3">
                                                     <div>
-                                                        <h3 className="text-xl font-bold">{salida.nombre}</h3>
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <h3 className="text-xl font-bold">{salida.nombre}</h3>
+                                                            {esOficial ? (
+                                                                <span className="bg-corp-primary text-white text-xs px-2 py-1 rounded-full">
+                                                                    🚴 Oficial
+                                                                </span>
+                                                            ) : (
+                                                                <span className="bg-gray-500 text-white text-xs px-2 py-1 rounded-full">
+                                                                    💡 Propuesta por {nombreProponente}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         <p className="text-gray-600">📅 {salida.fecha} • ⏰ {salida.hora}</p>
                                                     </div>
-                                                    {isAdmin && (
-                                                        <button onClick={() => eliminarSalida(salida.id)} className="text-red-600 hover:bg-red-50 px-3 py-1 rounded">🗑️</button>
-                                                    )}
+                                                    <div className="flex gap-2">
+                                                        {isAdmin && (
+                                                            <button onClick={() => eliminarSalida(salida.id)} className="text-red-600 hover:bg-red-50 px-3 py-1 rounded">🗑️</button>
+                                                        )}
+                                                        {!isAdmin && esMiPropuesta && (
+                                                            <button onClick={() => cancelarPropuesta(salida.id, salida.propuesta_por)} className="text-red-600 hover:bg-red-50 px-3 py-1 rounded text-sm">
+                                                                ✕ Cancelar
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <div className="grid md:grid-cols-3 gap-4 mb-3 text-sm">
                                                     {salida.distancia > 0 && <p>📏 Distancia: {salida.distancia} km</p>}
@@ -1211,7 +1432,8 @@
                                         <div className="text-center py-12 text-gray-500">
                                             <p className="text-6xl mb-4">🚴</p>
                                             <p>No hay salidas programadas</p>
-                                            {isAdmin && <p className="text-sm mt-2">Haz clic en "Nueva Salida" para crear una</p>}
+                                            {isAdmin && <p className="text-sm mt-2">Haz clic en "Nueva Salida Oficial" para crear una</p>}
+                                            {!isAdmin && <p className="text-sm mt-2">Haz clic en "Proponer Salida" para sugerir una</p>}
                                         </div>
                                     )}
                                 </div>
