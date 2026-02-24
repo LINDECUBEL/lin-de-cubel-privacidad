@@ -123,7 +123,6 @@
             const [verHistorial, setVerHistorial] = useState(false);
             const [logoClub, setLogoClub] = useState(localStorage.getItem('logo_club') || '');
             const [editandoLogo, setEditandoLogo] = useState(false);
-            const [editandoNumeroSocio, setEditandoNumeroSocio] = useState(null); // {socioId: 'xxx', numero: 123}
 
             useEffect(() => {
                 supabase.auth.getSession().then(({ data: { session } }) => {
@@ -233,7 +232,7 @@
             const loadAllData = async () => {
                 const { data: sociosData } = await supabase.from('socios').select('*').order('created_at', { ascending: false });
                 if (sociosData) setSocios(sociosData);
-                const { data: salidasData } = await supabase.from('salidas').select('*, propuesta_por_socio:propuesta_por(nombre, apellidos)').order('fecha', { ascending: false });
+                const { data: salidasData } = await supabase.from('salidas').select('*').order('fecha', { ascending: false });
                 if (salidasData) setSalidas(salidasData);
                 const { data: productosData } = await supabase.from('productos').select('*');
                 if (productosData) setProductos(productosData);
@@ -347,7 +346,6 @@
                 
                 // Preparar datos para Excel
                 const datosExcel = socios.map(socio => ({
-                    'Nº Socio': socio.numero_socio || '-',
                     'Nombre': socio.nombre,
                     'Apellidos': socio.apellidos,
                     'Email': socio.email,
@@ -380,7 +378,6 @@
                 const datosExcel = inscritos.map(inscripcion => {
                     const socio = socios.find(s => s.id === inscripcion.socio_id);
                     return {
-                        'Nº Socio': socio?.numero_socio || '-',
                         'Nombre': socio?.nombre || '-',
                         'Apellidos': socio?.apellidos || '-',
                         'Email': socio?.email || '-',
@@ -409,7 +406,6 @@
                     return {
                         'ID Pedido': compra.id.substring(0, 8),
                         'Fecha': compra.fecha,
-                        'Nº Socio': socio?.numero_socio || '-',
                         'Cliente': socio ? `${socio.nombre} ${socio.apellidos}` : '-',
                         'Email': socio?.email || '-',
                         'Teléfono': socio?.telefono || '-',
@@ -436,29 +432,6 @@
                 else { alert('Cuota de 20€ marcada como pagada'); loadAllData(); }
             };
 
-            const actualizarNumeroSocio = async (socioId, numero) => {
-                if (!isAdmin) return;
-                
-                // Validar que sea un número
-                const numeroInt = parseInt(numero);
-                if (isNaN(numeroInt) || numeroInt < 1) {
-                    alert('❌ El número de socio debe ser un número mayor que 0');
-                    return;
-                }
-                
-                const { error } = await supabase.from('socios').update({ numero_socio: numeroInt }).eq('id', socioId);
-                if (error) {
-                    if (error.code === '23505') {
-                        alert('❌ Ese número de socio ya está en uso.\nCada socio debe tener un número único.');
-                    } else {
-                        alert('Error: ' + error.message);
-                    }
-                } else {
-                    setEditandoNumeroSocio(null);
-                    loadAllData();
-                }
-            };
-
             const crearSalida = async () => {
                 if (!isAdmin) return;
                 if (!nuevaSalida.nombre || !nuevaSalida.fecha || !nuevaSalida.hora) {
@@ -472,54 +445,15 @@
                     distancia: parseInt(nuevaSalida.distancia) || 0,
                     desnivel: parseInt(nuevaSalida.desnivel) || 0,
                     nivel: nuevaSalida.nivel,
-                    punto_encuentro: nuevaSalida.punto_encuentro,
-                    propuesta_por: null // Salida oficial del admin
+                    punto_encuentro: nuevaSalida.punto_encuentro
                 }]);
                 if (error) alert('Error: ' + error.message);
                 else {
-                    alert('Salida oficial creada');
+                    alert('Salida creada');
                     setNuevaSalida({ nombre: '', fecha: '', hora: '', distancia: '', desnivel: '', nivel: 'Intermedio', punto_encuentro: '' });
                     setMostrarFormSalida(false);
                     loadAllData();
                 }
-            };
-
-            const proponerSalida = async () => {
-                if (!currentSocio) return;
-                if (!nuevaSalida.nombre || !nuevaSalida.fecha || !nuevaSalida.hora) {
-                    alert('Completa los campos obligatorios');
-                    return;
-                }
-                const { error } = await supabase.from('salidas').insert([{
-                    nombre: nuevaSalida.nombre,
-                    fecha: nuevaSalida.fecha,
-                    hora: nuevaSalida.hora,
-                    distancia: parseInt(nuevaSalida.distancia) || 0,
-                    desnivel: parseInt(nuevaSalida.desnivel) || 0,
-                    nivel: nuevaSalida.nivel,
-                    punto_encuentro: nuevaSalida.punto_encuentro,
-                    propuesta_por: currentSocio.id // Propuesta del socio
-                }]);
-                if (error) alert('Error: ' + error.message);
-                else {
-                    alert('✅ Salida propuesta con éxito!\n\nTodos los socios pueden verla y apuntarse.');
-                    setNuevaSalida({ nombre: '', fecha: '', hora: '', distancia: '', desnivel: '', nivel: 'Intermedio', punto_encuentro: '' });
-                    setMostrarFormSalida(false);
-                    loadAllData();
-                }
-            };
-
-            const cancelarPropuesta = async (salidaId, propuestaPor) => {
-                // Solo el que propuso o el admin pueden cancelar/eliminar
-                if (!currentSocio && !isAdmin) return;
-                if (!isAdmin && currentSocio.id !== propuestaPor) {
-                    alert('Solo puedes cancelar tus propias propuestas');
-                    return;
-                }
-                if (!confirm('¿Cancelar esta salida?')) return;
-                const { error } = await supabase.from('salidas').delete().eq('id', salidaId);
-                if (error) alert('Error: ' + error.message);
-                else { alert('Salida cancelada'); loadAllData(); }
             };
 
             const inscribirseASalida = async (salidaId) => {
@@ -775,35 +709,12 @@
                     const timestampInicio = Math.floor(inicioMes.getTime() / 1000);
                     
                     // Obtener actividades del mes actual (página 1, máximo 200 actividades)
-                    let actividadesRes = await fetch(
+                    const actividadesRes = await fetch(
                         `https://www.strava.com/api/v3/athlete/activities?after=${timestampInicio}&per_page=200`,
                         { headers: { 'Authorization': `Bearer ${tokenActivo}` } }
                     );
                     
-                    // Si el token expiró al obtener actividades, renovar
-                    if (actividadesRes.status === 401) {
-                        console.log('⚠️ Token expiró al obtener actividades, renovando...');
-                        const nuevoToken = await refreshStravaToken();
-                        if (nuevoToken) {
-                            tokenActivo = nuevoToken;
-                            actividadesRes = await fetch(
-                                `https://www.strava.com/api/v3/athlete/activities?after=${timestampInicio}&per_page=200`,
-                                { headers: { 'Authorization': `Bearer ${tokenActivo}` } }
-                            );
-                        } else {
-                            alert('⚠️ Error al renovar sesión de Strava.\n\nPor favor, reconecta con Strava.');
-                            return;
-                        }
-                    }
-                    
-                    let actividades = await actividadesRes.json();
-                    
-                    // Validar que sea un array antes de procesar
-                    if (!Array.isArray(actividades)) {
-                        console.error('Error: Strava no devolvió actividades:', actividades);
-                        alert('⚠️ Error al obtener actividades de Strava.\n\nPor favor, reconecta con Strava.');
-                        return;
-                    }
+                    const actividades = await actividadesRes.json();
                     
                     // Filtrar solo actividades de tipo "Ride" (bicicleta) y sumar
                     let kmMes = 0;
@@ -1083,10 +994,7 @@
                                             {socios.filter(s => !s.cuota_pagada).map(socio => (
                                                 <div key={socio.id} className="border border-yellow-300 rounded-lg p-4 bg-yellow-50 flex justify-between items-center">
                                                     <div>
-                                                        <p className="font-semibold text-lg">
-                                                            {socio.numero_socio && <span className="text-corp-primary">#{socio.numero_socio} </span>}
-                                                            {socio.nombre} {socio.apellidos}
-                                                        </p>
+                                                        <p className="font-semibold text-lg">{socio.nombre} {socio.apellidos}</p>
                                                         <p className="text-sm text-gray-600">{socio.email}</p>
                                                         <p className="text-sm text-gray-600">DNI: {socio.dni}</p>
                                                     </div>
@@ -1171,10 +1079,7 @@
                                                         <div className="flex justify-between items-start mb-3">
                                                             <div>
                                                                 <p className="font-semibold text-lg">🆕 Pedido #{compra.id.substring(0, 8)}</p>
-                                                                <p className="text-sm text-gray-600">
-                                                                    Cliente: {socio?.numero_socio && <span className="text-corp-primary font-semibold">#{socio.numero_socio} </span>}
-                                                                    {socio?.nombre} {socio?.apellidos}
-                                                                </p>
+                                                                <p className="text-sm text-gray-600">Cliente: {socio?.nombre} {socio?.apellidos}</p>
                                                                 <p className="text-sm text-gray-600">📅 {compra.fecha}</p>
                                                             </div>
                                                             <div className="text-right">
@@ -1280,7 +1185,6 @@
                                 <table className="w-full">
                                     <thead className="bg-gray-100">
                                         <tr>
-                                            {isAdmin && <th className="px-4 py-2 text-left">Nº Socio</th>}
                                             <th className="px-4 py-2 text-left">Nombre</th>
                                             <th className="px-4 py-2 text-left">Email</th>
                                             <th className="px-4 py-2 text-left">Teléfono</th>
@@ -1292,43 +1196,6 @@
                                     <tbody>
                                         {socios.map(socio => (
                                             <tr key={socio.id} className="border-b">
-                                                {isAdmin && (
-                                                    <td className="px-4 py-3">
-                                                        {editandoNumeroSocio?.socioId === socio.id ? (
-                                                            <div className="flex items-center gap-2">
-                                                                <input 
-                                                                    type="number" 
-                                                                    min="1"
-                                                                    value={editandoNumeroSocio.numero}
-                                                                    onChange={(e) => setEditandoNumeroSocio({...editandoNumeroSocio, numero: e.target.value})}
-                                                                    className="border rounded px-2 py-1 w-20"
-                                                                    autoFocus
-                                                                />
-                                                                <button 
-                                                                    onClick={() => actualizarNumeroSocio(socio.id, editandoNumeroSocio.numero)}
-                                                                    className="bg-green-600 text-white px-2 py-1 rounded text-sm hover:bg-green-700">
-                                                                    ✓
-                                                                </button>
-                                                                <button 
-                                                                    onClick={() => setEditandoNumeroSocio(null)}
-                                                                    className="bg-gray-400 text-white px-2 py-1 rounded text-sm hover:bg-gray-500">
-                                                                    ✕
-                                                                </button>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="font-semibold text-corp-primary">
-                                                                    {socio.numero_socio ? `#${socio.numero_socio}` : '-'}
-                                                                </span>
-                                                                <button 
-                                                                    onClick={() => setEditandoNumeroSocio({socioId: socio.id, numero: socio.numero_socio || ''})}
-                                                                    className="text-gray-500 hover:text-corp-primary text-sm">
-                                                                    ✏️
-                                                                </button>
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                )}
                                                 <td className="px-4 py-3">{socio.nombre} {socio.apellidos}</td>
                                                 <td className="px-4 py-3">{socio.email}</td>
                                                 <td className="px-4 py-3">{socio.telefono || '-'}</td>
@@ -1358,28 +1225,16 @@
                             <div className="bg-white rounded-lg shadow p-6">
                                 <div className="flex justify-between items-center mb-4">
                                     <h2 className="text-2xl font-bold">Salidas Programadas</h2>
-                                    <div className="flex gap-2">
-                                        {isAdmin && (
-                                            <button onClick={() => setMostrarFormSalida(!mostrarFormSalida)} className="btn-primary px-4 py-2 rounded">
-                                                {mostrarFormSalida ? '✕ Cancelar' : '➕ Nueva Salida Oficial'}
-                                            </button>
-                                        )}
-                                        {!isAdmin && currentSocio && (
-                                            <button onClick={() => setMostrarFormSalida(!mostrarFormSalida)} className="btn-secondary px-4 py-2 rounded">
-                                                {mostrarFormSalida ? '✕ Cancelar' : '💡 Proponer Salida'}
-                                            </button>
-                                        )}
-                                    </div>
+                                    {isAdmin && (
+                                        <button onClick={() => setMostrarFormSalida(!mostrarFormSalida)} className="btn-primary px-4 py-2 rounded">
+                                            {mostrarFormSalida ? '✕ Cancelar' : '➕ Nueva Salida'}
+                                        </button>
+                                    )}
                                 </div>
                                 
-                                {mostrarFormSalida && (
+                                {mostrarFormSalida && isAdmin && (
                                     <div className="mb-6 p-4 bg-corp-bg-pale rounded-lg">
-                                        <h3 className="font-bold mb-3">{isAdmin ? 'Crear Nueva Salida Oficial' : 'Proponer una Salida'}</h3>
-                                        {!isAdmin && (
-                                            <p className="text-sm text-gray-600 mb-3">
-                                                💡 Propón una salida y todos los socios podrán verla y apuntarse
-                                            </p>
-                                        )}
+                                        <h3 className="font-bold mb-3">Crear Nueva Salida</h3>
                                         <div className="grid md:grid-cols-2 gap-3">
                                             <input type="text" placeholder="Nombre de la salida *" value={nuevaSalida.nombre}
                                                 onChange={(e) => setNuevaSalida({...nuevaSalida, nombre: e.target.value})}
@@ -1407,11 +1262,7 @@
                                                 onChange={(e) => setNuevaSalida({...nuevaSalida, punto_encuentro: e.target.value})}
                                                 className="border rounded px-3 py-2 md:col-span-2"/>
                                         </div>
-                                        <button 
-                                            onClick={isAdmin ? crearSalida : proponerSalida} 
-                                            className={`px-6 py-2 rounded mt-3 ${isAdmin ? 'btn-primary' : 'btn-secondary'}`}>
-                                            {isAdmin ? 'Crear Salida Oficial' : '💡 Proponer Salida'}
-                                        </button>
+                                        <button onClick={crearSalida} className="btn-primary px-6 py-2 rounded mt-3">Crear Salida</button>
                                     </div>
                                 )}
                                 
@@ -1420,38 +1271,16 @@
                                         const inscritos = inscripciones.filter(i => i.salida_id === salida.id);
                                         const sociosInscritos = inscritos.map(i => socios.find(s => s.id === i.socio_id)).filter(Boolean);
                                         const estaInscrito = inscritos.some(i => i.socio_id === currentSocio?.id);
-                                        const esOficial = !salida.propuesta_por;
-                                        const esMiPropuesta = salida.propuesta_por === currentSocio?.id;
-                                        const nombreProponente = salida.propuesta_por_socio ? `${salida.propuesta_por_socio.nombre} ${salida.propuesta_por_socio.apellidos}` : null;
-                                        
                                         return (
-                                            <div key={salida.id} className={`border rounded-lg p-4 ${esOficial ? 'border-corp-primary bg-corp-bg-light' : 'border-gray-300'}`}>
+                                            <div key={salida.id} className="border rounded-lg p-4">
                                                 <div className="flex justify-between items-start mb-3">
                                                     <div>
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <h3 className="text-xl font-bold">{salida.nombre}</h3>
-                                                            {esOficial ? (
-                                                                <span className="bg-corp-primary text-white text-xs px-2 py-1 rounded-full">
-                                                                    🚴 Oficial
-                                                                </span>
-                                                            ) : (
-                                                                <span className="bg-gray-500 text-white text-xs px-2 py-1 rounded-full">
-                                                                    💡 Propuesta por {nombreProponente}
-                                                                </span>
-                                                            )}
-                                                        </div>
+                                                        <h3 className="text-xl font-bold">{salida.nombre}</h3>
                                                         <p className="text-gray-600">📅 {salida.fecha} • ⏰ {salida.hora}</p>
                                                     </div>
-                                                    <div className="flex gap-2">
-                                                        {isAdmin && (
-                                                            <button onClick={() => eliminarSalida(salida.id)} className="text-red-600 hover:bg-red-50 px-3 py-1 rounded">🗑️</button>
-                                                        )}
-                                                        {!isAdmin && esMiPropuesta && (
-                                                            <button onClick={() => cancelarPropuesta(salida.id, salida.propuesta_por)} className="text-red-600 hover:bg-red-50 px-3 py-1 rounded text-sm">
-                                                                ✕ Cancelar
-                                                            </button>
-                                                        )}
-                                                    </div>
+                                                    {isAdmin && (
+                                                        <button onClick={() => eliminarSalida(salida.id)} className="text-red-600 hover:bg-red-50 px-3 py-1 rounded">🗑️</button>
+                                                    )}
                                                 </div>
                                                 <div className="grid md:grid-cols-3 gap-4 mb-3 text-sm">
                                                     {salida.distancia > 0 && <p>📏 Distancia: {salida.distancia} km</p>}
@@ -1474,7 +1303,6 @@
                                                         <div className="flex flex-wrap gap-2">
                                                             {sociosInscritos.map(socio => (
                                                                 <span key={socio.id} className="bg-corp-bg-pale text-corp-secondary px-3 py-1 rounded-full text-sm">
-                                                                    {socio.numero_socio && <span className="font-semibold">#{socio.numero_socio} </span>}
                                                                     {socio.nombre} {socio.apellidos}
                                                                 </span>
                                                             ))}
@@ -1504,8 +1332,7 @@
                                         <div className="text-center py-12 text-gray-500">
                                             <p className="text-6xl mb-4">🚴</p>
                                             <p>No hay salidas programadas</p>
-                                            {isAdmin && <p className="text-sm mt-2">Haz clic en "Nueva Salida Oficial" para crear una</p>}
-                                            {!isAdmin && <p className="text-sm mt-2">Haz clic en "Proponer Salida" para sugerir una</p>}
+                                            {isAdmin && <p className="text-sm mt-2">Haz clic en "Nueva Salida" para crear una</p>}
                                         </div>
                                     )}
                                 </div>
@@ -1736,23 +1563,16 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {stravaStats.sort((a, b) => b.km_mes - a.km_mes).map((stat, i) => {
-                                                    const socio = socios.find(s => s.id === stat.socio_id);
-                                                    const numeroSocio = socio?.numero_socio;
-                                                    return (
-                                                        <tr key={stat.id} className="border-b">
-                                                            <td className="px-4 py-3">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</td>
-                                                            <td className="px-4 py-3">
-                                                                {numeroSocio && <span className="text-corp-primary font-semibold">#{numeroSocio} </span>}
-                                                                {stat.socios?.nombre} {stat.socios?.apellidos}
-                                                            </td>
-                                                            <td className="px-4 py-3">{stat.km_mes} km</td>
-                                                            <td className="px-4 py-3">{stat.km_ano} km</td>
-                                                            <td className="px-4 py-3">{stat.desnivel_mes} m</td>
-                                                            <td className="px-4 py-3">{stat.salidas_mes}</td>
-                                                        </tr>
-                                                    );
-                                                })}
+                                                {stravaStats.sort((a, b) => b.km_mes - a.km_mes).map((stat, i) => (
+                                                    <tr key={stat.id} className="border-b">
+                                                        <td className="px-4 py-3">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</td>
+                                                        <td className="px-4 py-3">{stat.socios?.nombre} {stat.socios?.apellidos}</td>
+                                                        <td className="px-4 py-3">{stat.km_mes} km</td>
+                                                        <td className="px-4 py-3">{stat.km_ano} km</td>
+                                                        <td className="px-4 py-3">{stat.desnivel_mes} m</td>
+                                                        <td className="px-4 py-3">{stat.salidas_mes}</td>
+                                                    </tr>
+                                                ))}
                                             </tbody>
                                         </table>
                                     </div>
