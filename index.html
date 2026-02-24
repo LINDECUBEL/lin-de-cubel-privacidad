@@ -123,6 +123,8 @@
             const [verHistorial, setVerHistorial] = useState(false);
             const [logoClub, setLogoClub] = useState(localStorage.getItem('logo_club') || '');
             const [editandoLogo, setEditandoLogo] = useState(false);
+            const [socioEditando, setSocioEditando] = useState(null);
+            const [formEditSocio, setFormEditSocio] = useState({});
 
             useEffect(() => {
                 supabase.auth.getSession().then(({ data: { session } }) => {
@@ -230,7 +232,7 @@
             }, [currentSocio, stravaClientId, stravaClientSecret]);
 
             const loadAllData = async () => {
-                const { data: sociosData } = await supabase.from('socios').select('*').order('created_at', { ascending: false });
+                const { data: sociosData } = await supabase.from('socios').select('*').order('numero_socio', { ascending: true, nullsFirst: false });
                 if (sociosData) setSocios(sociosData);
                 const { data: salidasData } = await supabase.from('salidas').select('*, propuesta_por_socio:propuesta_por(nombre, apellidos)').order('fecha', { ascending: false });
                 if (salidasData) setSalidas(salidasData);
@@ -346,6 +348,7 @@
                 
                 // Preparar datos para Excel
                 const datosExcel = socios.map(socio => ({
+                    'Nº Socio': socio.numero_socio || '-',
                     'Nombre': socio.nombre,
                     'Apellidos': socio.apellidos,
                     'Email': socio.email,
@@ -430,6 +433,39 @@
                 const { error } = await supabase.from('socios').update({ cuota_pagada: true, fecha_pago: new Date().toISOString().split('T')[0] }).eq('id', socioId);
                 if (error) alert('Error: ' + error.message);
                 else { alert('Cuota de 20€ marcada como pagada'); loadAllData(); }
+            };
+
+            const abrirEditSocio = (socio) => {
+                setSocioEditando(socio.id);
+                setFormEditSocio({
+                    numero_socio: socio.numero_socio || '',
+                    nombre: socio.nombre || '',
+                    apellidos: socio.apellidos || '',
+                    email: socio.email || '',
+                    dni: socio.dni || '',
+                    telefono: socio.telefono || '',
+                    fecha_nacimiento: socio.fecha_nacimiento || '',
+                    direccion: socio.direccion || '',
+                    cuota_pagada: socio.cuota_pagada || false,
+                    fecha_pago: socio.fecha_pago || ''
+                });
+            };
+
+            const guardarEditSocio = async (socioId) => {
+                const { error } = await supabase.from('socios').update({
+                    numero_socio: formEditSocio.numero_socio ? parseInt(formEditSocio.numero_socio) : null,
+                    nombre: formEditSocio.nombre,
+                    apellidos: formEditSocio.apellidos,
+                    email: formEditSocio.email,
+                    dni: formEditSocio.dni,
+                    telefono: formEditSocio.telefono,
+                    fecha_nacimiento: formEditSocio.fecha_nacimiento || null,
+                    direccion: formEditSocio.direccion,
+                    cuota_pagada: formEditSocio.cuota_pagada,
+                    fecha_pago: formEditSocio.fecha_pago || null
+                }).eq('id', socioId);
+                if (error) alert('Error: ' + error.message);
+                else { setSocioEditando(null); loadAllData(); }
             };
 
             const crearSalida = async () => {
@@ -640,6 +676,19 @@
                 console.log('Client ID:', stravaClientId);
                 console.log('Redirect URI:', redirectUri);
                 window.location.href = `https://www.strava.com/oauth/authorize?client_id=${stravaClientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&approval_prompt=force&scope=${scope}`;
+            };
+
+            const desconectarStrava = async () => {
+                if (!currentSocio) return;
+                const { error } = await supabase.from('socios').update({
+                    strava_access_token: null,
+                    strava_refresh_token: null
+                }).eq('id', currentSocio.id);
+                if (!error) {
+                    const { data: updated } = await supabase.from('socios').select('*').eq('id', currentSocio.id).single();
+                    if (updated) setCurrentSocio(updated);
+                    alert('✅ Strava desconectado. Ahora puedes volver a conectar.');
+                }
             };
 
             // Renovar token de Strava cuando expire
@@ -939,7 +988,7 @@
                                     )}
                                     <div className="text-right">
                                         <p className="text-sm font-semibold flex items-center gap-2 justify-end">
-                                            {isAdmin ? 'Administrador' : currentSocio ? `${currentSocio.nombre} ${currentSocio.apellidos}` : 'Usuario'}
+                                            {isAdmin ? 'Administrador' : currentSocio ? `${currentSocio.numero_socio ? `#${currentSocio.numero_socio} - ` : ''}${currentSocio.nombre} ${currentSocio.apellidos}` : 'Usuario'}
                                             {isAdmin && (socios.filter(s => !s.cuota_pagada).length + compras.filter(c => !c.preparado).length) > 0 && (
                                                 <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
                                                     {socios.filter(s => !s.cuota_pagada).length + compras.filter(c => !c.preparado).length}
@@ -1056,7 +1105,7 @@
                                             {socios.filter(s => !s.cuota_pagada).map(socio => (
                                                 <div key={socio.id} className="border border-yellow-300 rounded-lg p-4 bg-yellow-50 flex justify-between items-center">
                                                     <div>
-                                                        <p className="font-semibold text-lg">{socio.nombre} {socio.apellidos}</p>
+                                                        <p className="font-semibold text-lg">{socio.numero_socio ? `#${socio.numero_socio} - ` : ''}{socio.nombre} {socio.apellidos}</p>
                                                         <p className="text-sm text-gray-600">{socio.email}</p>
                                                         <p className="text-sm text-gray-600">DNI: {socio.dni}</p>
                                                     </div>
@@ -1247,36 +1296,69 @@
                                 <table className="w-full">
                                     <thead className="bg-gray-100">
                                         <tr>
+                                            <th className="px-4 py-2 text-left">Nº</th>
                                             <th className="px-4 py-2 text-left">Nombre</th>
                                             <th className="px-4 py-2 text-left">Email</th>
                                             <th className="px-4 py-2 text-left">Teléfono</th>
                                             {isAdmin && <th className="px-4 py-2 text-left">DNI</th>}
+                                            {isAdmin && <th className="px-4 py-2 text-left">Dirección</th>}
+                                            {isAdmin && <th className="px-4 py-2 text-left">F. Nacimiento</th>}
                                             <th className="px-4 py-2 text-left">Cuota</th>
                                             {isAdmin && <th className="px-4 py-2 text-left">Acciones</th>}
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {socios.map(socio => (
-                                            <tr key={socio.id} className="border-b">
-                                                <td className="px-4 py-3">{socio.nombre} {socio.apellidos}</td>
-                                                <td className="px-4 py-3">{socio.email}</td>
-                                                <td className="px-4 py-3">{socio.telefono || '-'}</td>
-                                                {isAdmin && <td className="px-4 py-3">{socio.dni}</td>}
-                                                <td className="px-4 py-3">
-                                                    {socio.cuota_pagada ? (
-                                                        <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm">✓ Pagada {socio.fecha_pago && `(${socio.fecha_pago})`}</span>
-                                                    ) : (
-                                                        <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-sm">⏳ Pendiente</span>
-                                                    )}
-                                                </td>
-                                                {isAdmin && (
+                                            socioEditando === socio.id ? (
+                                                <tr key={socio.id} className="border-b bg-yellow-50">
+                                                    <td className="px-2 py-2"><input type="number" value={formEditSocio.numero_socio} onChange={e => setFormEditSocio({...formEditSocio, numero_socio: e.target.value})} className="border rounded px-2 py-1 w-16"/></td>
+                                                    <td className="px-2 py-2">
+                                                        <input type="text" value={formEditSocio.nombre} onChange={e => setFormEditSocio({...formEditSocio, nombre: e.target.value})} className="border rounded px-2 py-1 w-24 mb-1"/>
+                                                        <input type="text" value={formEditSocio.apellidos} onChange={e => setFormEditSocio({...formEditSocio, apellidos: e.target.value})} className="border rounded px-2 py-1 w-32"/>
+                                                    </td>
+                                                    <td className="px-2 py-2"><input type="email" value={formEditSocio.email} onChange={e => setFormEditSocio({...formEditSocio, email: e.target.value})} className="border rounded px-2 py-1 w-40"/></td>
+                                                    <td className="px-2 py-2"><input type="text" value={formEditSocio.telefono} onChange={e => setFormEditSocio({...formEditSocio, telefono: e.target.value})} className="border rounded px-2 py-1 w-28"/></td>
+                                                    <td className="px-2 py-2"><input type="text" value={formEditSocio.dni} onChange={e => setFormEditSocio({...formEditSocio, dni: e.target.value})} className="border rounded px-2 py-1 w-24"/></td>
+                                                    <td className="px-2 py-2"><input type="text" value={formEditSocio.direccion} onChange={e => setFormEditSocio({...formEditSocio, direccion: e.target.value})} className="border rounded px-2 py-1 w-36"/></td>
+                                                    <td className="px-2 py-2"><input type="date" value={formEditSocio.fecha_nacimiento} onChange={e => setFormEditSocio({...formEditSocio, fecha_nacimiento: e.target.value})} className="border rounded px-2 py-1 w-32"/></td>
+                                                    <td className="px-2 py-2">
+                                                        <label className="flex items-center gap-1 text-sm">
+                                                            <input type="checkbox" checked={formEditSocio.cuota_pagada} onChange={e => setFormEditSocio({...formEditSocio, cuota_pagada: e.target.checked})}/>
+                                                            Pagada
+                                                        </label>
+                                                        {formEditSocio.cuota_pagada && <input type="date" value={formEditSocio.fecha_pago} onChange={e => setFormEditSocio({...formEditSocio, fecha_pago: e.target.value})} className="border rounded px-2 py-1 w-32 mt-1"/>}
+                                                    </td>
+                                                    <td className="px-2 py-2">
+                                                        <button onClick={() => guardarEditSocio(socio.id)} className="btn-primary px-3 py-1 rounded text-sm mr-1">💾 Guardar</button>
+                                                        <button onClick={() => setSocioEditando(null)} className="bg-gray-200 px-3 py-1 rounded text-sm">✕</button>
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                <tr key={socio.id} className="border-b">
+                                                    <td className="px-4 py-3 font-bold text-corp-primary">{socio.numero_socio || '-'}</td>
+                                                    <td className="px-4 py-3">{socio.nombre} {socio.apellidos}</td>
+                                                    <td className="px-4 py-3">{socio.email}</td>
+                                                    <td className="px-4 py-3">{socio.telefono || '-'}</td>
+                                                    {isAdmin && <td className="px-4 py-3">{socio.dni}</td>}
+                                                    {isAdmin && <td className="px-4 py-3">{socio.direccion || '-'}</td>}
+                                                    {isAdmin && <td className="px-4 py-3">{socio.fecha_nacimiento || '-'}</td>}
                                                     <td className="px-4 py-3">
-                                                        {!socio.cuota_pagada && (
-                                                            <button onClick={() => pagarCuota(socio.id)} className="btn-primary px-3 py-1 rounded text-sm">Marcar Pagada</button>
+                                                        {socio.cuota_pagada ? (
+                                                            <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-sm">✓ Pagada {socio.fecha_pago && `(${socio.fecha_pago})`}</span>
+                                                        ) : (
+                                                            <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-sm">⏳ Pendiente</span>
                                                         )}
                                                     </td>
-                                                )}
-                                            </tr>
+                                                    {isAdmin && (
+                                                        <td className="px-4 py-3 flex gap-2 flex-wrap">
+                                                            <button onClick={() => abrirEditSocio(socio)} className="bg-blue-500 text-white px-3 py-1 rounded text-sm">✏️ Editar</button>
+                                                            {!socio.cuota_pagada && (
+                                                                <button onClick={() => pagarCuota(socio.id)} className="btn-primary px-3 py-1 rounded text-sm">✓ Pagar</button>
+                                                            )}
+                                                        </td>
+                                                    )}
+                                                </tr>
+                                            )
                                         ))}
                                     </tbody>
                                 </table>
@@ -1403,7 +1485,7 @@
                                                         <div className="flex flex-wrap gap-2">
                                                             {sociosInscritos.map(socio => (
                                                                 <span key={socio.id} className="bg-corp-bg-pale text-corp-secondary px-3 py-1 rounded-full text-sm">
-                                                                    {socio.nombre} {socio.apellidos}
+                                                                    {socio.numero_socio ? `#${socio.numero_socio} ` : ''}{socio.nombre} {socio.apellidos}
                                                                 </span>
                                                             ))}
                                                         </div>
@@ -1701,6 +1783,11 @@
                                         <button onClick={conectarConStrava} className="bg-orange-500 text-white px-6 py-3 rounded text-lg hover:bg-orange-600">
                                             Conectar con Strava
                                         </button>
+                                        {currentSocio?.strava_access_token && (
+                                            <button onClick={desconectarStrava} className="bg-gray-500 text-white px-6 py-3 rounded text-lg hover:bg-gray-600 ml-3">
+                                                🔌 Desconectar Strava
+                                            </button>
+                                        )}
                                     </div>
                                 )}
                             </div>
