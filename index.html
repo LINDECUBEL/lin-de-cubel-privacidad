@@ -240,7 +240,7 @@
                 if (productosData) setProductos(productosData);
                 const { data: inscripcionesData } = await supabase.from('inscripciones').select('*');
                 if (inscripcionesData) setInscripciones(inscripcionesData);
-                const { data: stravaData } = await supabase.from('strava_stats').select('*, socios(nombre, apellidos)');
+                const { data: stravaData } = await supabase.from('strava_stats').select('*, socios(nombre, apellidos, numero_socio)');
                 if (stravaData) setStravaStats(stravaData);
                 const { data: comprasData } = await supabase.from('compras').select('*').order('created_at', { ascending: false });
                 if (comprasData) setCompras(comprasData);
@@ -1190,7 +1190,7 @@
                                                         <div className="flex justify-between items-start mb-3">
                                                             <div>
                                                                 <p className="font-semibold text-lg">🆕 Pedido #{compra.id.substring(0, 8)}</p>
-                                                                <p className="text-sm text-gray-600">Cliente: {socio?.nombre} {socio?.apellidos}</p>
+                                                                <p className="text-sm text-gray-600">Cliente: {socio?.numero_socio ? `#${socio.numero_socio} - ` : ''}{socio?.nombre} {socio?.apellidos}</p>
                                                                 <p className="text-sm text-gray-600">📅 {compra.fecha}</p>
                                                             </div>
                                                             <div className="text-right">
@@ -1246,7 +1246,7 @@
                                                         <div className="flex justify-between items-center">
                                                             <div>
                                                                 <p className="font-semibold">Pedido #{compra.id.substring(0, 8)}</p>
-                                                                <p className="text-sm text-gray-600">{socio?.nombre} {socio?.apellidos} - {compra.fecha}</p>
+                                                                <p className="text-sm text-gray-600">{socio?.numero_socio ? `#${socio.numero_socio} - ` : ''}{socio?.nombre} {socio?.apellidos} - {compra.fecha}</p>
                                                                 <p className="text-xs text-gray-500">{items.length} artículo(s)</p>
                                                             </div>
                                                             <div className="text-right">
@@ -1729,9 +1729,14 @@
                                 <h2 className="text-2xl font-bold mb-4">Integración con Strava</h2>
                                 {currentSocio?.strava_connected ? (
                                     <div>
-                                        <div className="mb-4 p-4 bg-green-50 rounded">
-                                            <p className="font-semibold">✓ Conectado con Strava</p>
-                                            <button onClick={sincronizarStrava} className="btn-primary px-4 py-2 rounded mt-2">🔄 Sincronizar</button>
+                                        <div className="mb-4 p-4 bg-green-50 rounded flex justify-between items-center">
+                                            <div>
+                                                <p className="font-semibold">✓ Conectado con Strava</p>
+                                                <button onClick={sincronizarStrava} className="btn-primary px-4 py-2 rounded mt-2">🔄 Sincronizar</button>
+                                            </div>
+                                            <button onClick={desconectarStrava} className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">
+                                                🔌 Desconectar Strava
+                                            </button>
                                         </div>
                                         <h3 className="font-bold text-lg mb-3">Clasificación del Club</h3>
                                         <table className="w-full">
@@ -1749,7 +1754,7 @@
                                                 {stravaStats.sort((a, b) => b.km_mes - a.km_mes).map((stat, i) => (
                                                     <tr key={stat.id} className="border-b">
                                                         <td className="px-4 py-3">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</td>
-                                                        <td className="px-4 py-3">{stat.socios?.nombre} {stat.socios?.apellidos}</td>
+                                                        <td className="px-4 py-3">{stat.socios?.numero_socio ? `#${stat.socios.numero_socio} ` : ''}{stat.socios?.nombre} {stat.socios?.apellidos}</td>
                                                         <td className="px-4 py-3">{stat.km_mes} km</td>
                                                         <td className="px-4 py-3">{stat.km_ano} km</td>
                                                         <td className="px-4 py-3">{stat.desnivel_mes} m</td>
