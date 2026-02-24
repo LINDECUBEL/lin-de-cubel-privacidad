@@ -124,6 +124,7 @@
             const [logoClub, setLogoClub] = useState(localStorage.getItem('logo_club') || '');
             const [editandoLogo, setEditandoLogo] = useState(false);
             const [editandoNumeroSocio, setEditandoNumeroSocio] = useState(null); // {socioId: 'xxx', numero: 123}
+            const [editandoSocio, setEditandoSocio] = useState(null); // Socio completo siendo editado
 
             useEffect(() => {
                 supabase.auth.getSession().then(({ data: { session } }) => {
@@ -231,7 +232,7 @@
             }, [currentSocio, stravaClientId, stravaClientSecret]);
 
             const loadAllData = async () => {
-                const { data: sociosData } = await supabase.from('socios').select('*').order('created_at', { ascending: false });
+                const { data: sociosData } = await supabase.from('socios').select('*').order('numero_socio', { ascending: true, nullsFirst: false }).order('nombre', { ascending: true });
                 if (sociosData) setSocios(sociosData);
                 const { data: salidasData } = await supabase.from('salidas').select('*, propuesta_por_socio:propuesta_por(nombre, apellidos)').order('fecha', { ascending: false });
                 if (salidasData) setSalidas(salidasData);
@@ -455,6 +456,44 @@
                     }
                 } else {
                     setEditandoNumeroSocio(null);
+                    loadAllData();
+                }
+            };
+
+            const actualizarDatosSocio = async () => {
+                if (!isAdmin || !editandoSocio) return;
+                
+                // Validar campos obligatorios
+                if (!editandoSocio.nombre || !editandoSocio.apellidos || !editandoSocio.email || !editandoSocio.dni) {
+                    alert('❌ Los campos Nombre, Apellidos, Email y DNI son obligatorios');
+                    return;
+                }
+                
+                // Preparar datos para actualizar
+                const datosActualizar = {
+                    numero_socio: editandoSocio.numero_socio ? parseInt(editandoSocio.numero_socio) : null,
+                    nombre: editandoSocio.nombre,
+                    apellidos: editandoSocio.apellidos,
+                    email: editandoSocio.email,
+                    dni: editandoSocio.dni,
+                    telefono: editandoSocio.telefono,
+                    fecha_nacimiento: editandoSocio.fecha_nacimiento,
+                    direccion: editandoSocio.direccion,
+                    cuota_pagada: editandoSocio.cuota_pagada,
+                    fecha_pago: editandoSocio.fecha_pago
+                };
+                
+                const { error } = await supabase.from('socios').update(datosActualizar).eq('id', editandoSocio.id);
+                
+                if (error) {
+                    if (error.code === '23505') {
+                        alert('❌ Ese número de socio ya está en uso.\nCada socio debe tener un número único.');
+                    } else {
+                        alert('Error: ' + error.message);
+                    }
+                } else {
+                    alert('✅ Datos del socio actualizados correctamente');
+                    setEditandoSocio(null);
                     loadAllData();
                 }
             };
@@ -1280,7 +1319,7 @@
                                 <table className="w-full">
                                     <thead className="bg-gray-100">
                                         <tr>
-                                            {isAdmin && <th className="px-4 py-2 text-left">Nº Socio</th>}
+                                            <th className="px-4 py-2 text-left">Nº Socio</th>
                                             <th className="px-4 py-2 text-left">Nombre</th>
                                             <th className="px-4 py-2 text-left">Email</th>
                                             <th className="px-4 py-2 text-left">Teléfono</th>
@@ -1292,43 +1331,11 @@
                                     <tbody>
                                         {socios.map(socio => (
                                             <tr key={socio.id} className="border-b">
-                                                {isAdmin && (
-                                                    <td className="px-4 py-3">
-                                                        {editandoNumeroSocio?.socioId === socio.id ? (
-                                                            <div className="flex items-center gap-2">
-                                                                <input 
-                                                                    type="number" 
-                                                                    min="1"
-                                                                    value={editandoNumeroSocio.numero}
-                                                                    onChange={(e) => setEditandoNumeroSocio({...editandoNumeroSocio, numero: e.target.value})}
-                                                                    className="border rounded px-2 py-1 w-20"
-                                                                    autoFocus
-                                                                />
-                                                                <button 
-                                                                    onClick={() => actualizarNumeroSocio(socio.id, editandoNumeroSocio.numero)}
-                                                                    className="bg-green-600 text-white px-2 py-1 rounded text-sm hover:bg-green-700">
-                                                                    ✓
-                                                                </button>
-                                                                <button 
-                                                                    onClick={() => setEditandoNumeroSocio(null)}
-                                                                    className="bg-gray-400 text-white px-2 py-1 rounded text-sm hover:bg-gray-500">
-                                                                    ✕
-                                                                </button>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="font-semibold text-corp-primary">
-                                                                    {socio.numero_socio ? `#${socio.numero_socio}` : '-'}
-                                                                </span>
-                                                                <button 
-                                                                    onClick={() => setEditandoNumeroSocio({socioId: socio.id, numero: socio.numero_socio || ''})}
-                                                                    className="text-gray-500 hover:text-corp-primary text-sm">
-                                                                    ✏️
-                                                                </button>
-                                                            </div>
-                                                        )}
-                                                    </td>
-                                                )}
+                                                <td className="px-4 py-3">
+                                                    <span className="font-semibold text-corp-primary">
+                                                        {socio.numero_socio ? `#${socio.numero_socio}` : '-'}
+                                                    </span>
+                                                </td>
                                                 <td className="px-4 py-3">{socio.nombre} {socio.apellidos}</td>
                                                 <td className="px-4 py-3">{socio.email}</td>
                                                 <td className="px-4 py-3">{socio.telefono || '-'}</td>
@@ -1342,15 +1349,160 @@
                                                 </td>
                                                 {isAdmin && (
                                                     <td className="px-4 py-3">
-                                                        {!socio.cuota_pagada && (
-                                                            <button onClick={() => pagarCuota(socio.id)} className="btn-primary px-3 py-1 rounded text-sm">Marcar Pagada</button>
-                                                        )}
+                                                        <div className="flex gap-2">
+                                                            <button 
+                                                                onClick={() => setEditandoSocio({...socio})} 
+                                                                className="bg-corp-secondary text-white px-3 py-1 rounded text-sm hover:bg-opacity-90">
+                                                                ✏️ Editar
+                                                            </button>
+                                                            {!socio.cuota_pagada && (
+                                                                <button onClick={() => pagarCuota(socio.id)} className="btn-primary px-3 py-1 rounded text-sm">✓ Pagar</button>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 )}
                                             </tr>
                                         ))}
                                     </tbody>
                                 </table>
+                                
+                                {/* Modal de edición de socio */}
+                                {editandoSocio && (
+                                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                                        <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                                            <div className="p-6">
+                                                <div className="flex justify-between items-center mb-4">
+                                                    <h3 className="text-2xl font-bold">Editar Socio</h3>
+                                                    <button 
+                                                        onClick={() => setEditandoSocio(null)}
+                                                        className="text-gray-500 hover:text-gray-700 text-2xl">
+                                                        ✕
+                                                    </button>
+                                                </div>
+                                                
+                                                <div className="grid md:grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="block text-sm font-semibold mb-1">Nº Socio</label>
+                                                        <input 
+                                                            type="number" 
+                                                            min="1"
+                                                            placeholder="Ej: 45"
+                                                            value={editandoSocio.numero_socio || ''}
+                                                            onChange={(e) => setEditandoSocio({...editandoSocio, numero_socio: e.target.value})}
+                                                            className="border rounded px-3 py-2 w-full"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div>
+                                                        <label className="block text-sm font-semibold mb-1">Nombre *</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={editandoSocio.nombre || ''}
+                                                            onChange={(e) => setEditandoSocio({...editandoSocio, nombre: e.target.value})}
+                                                            className="border rounded px-3 py-2 w-full"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div>
+                                                        <label className="block text-sm font-semibold mb-1">Apellidos *</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={editandoSocio.apellidos || ''}
+                                                            onChange={(e) => setEditandoSocio({...editandoSocio, apellidos: e.target.value})}
+                                                            className="border rounded px-3 py-2 w-full"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div>
+                                                        <label className="block text-sm font-semibold mb-1">Email *</label>
+                                                        <input 
+                                                            type="email" 
+                                                            value={editandoSocio.email || ''}
+                                                            onChange={(e) => setEditandoSocio({...editandoSocio, email: e.target.value})}
+                                                            className="border rounded px-3 py-2 w-full"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div>
+                                                        <label className="block text-sm font-semibold mb-1">DNI *</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={editandoSocio.dni || ''}
+                                                            onChange={(e) => setEditandoSocio({...editandoSocio, dni: e.target.value})}
+                                                            className="border rounded px-3 py-2 w-full"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div>
+                                                        <label className="block text-sm font-semibold mb-1">Teléfono</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={editandoSocio.telefono || ''}
+                                                            onChange={(e) => setEditandoSocio({...editandoSocio, telefono: e.target.value})}
+                                                            className="border rounded px-3 py-2 w-full"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div>
+                                                        <label className="block text-sm font-semibold mb-1">Fecha de Nacimiento</label>
+                                                        <input 
+                                                            type="date" 
+                                                            value={editandoSocio.fecha_nacimiento || ''}
+                                                            onChange={(e) => setEditandoSocio({...editandoSocio, fecha_nacimiento: e.target.value})}
+                                                            className="border rounded px-3 py-2 w-full"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div className="md:col-span-2">
+                                                        <label className="block text-sm font-semibold mb-1">Dirección</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={editandoSocio.direccion || ''}
+                                                            onChange={(e) => setEditandoSocio({...editandoSocio, direccion: e.target.value})}
+                                                            className="border rounded px-3 py-2 w-full"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div>
+                                                        <label className="block text-sm font-semibold mb-1">Cuota Pagada</label>
+                                                        <select 
+                                                            value={editandoSocio.cuota_pagada ? 'true' : 'false'}
+                                                            onChange={(e) => setEditandoSocio({...editandoSocio, cuota_pagada: e.target.value === 'true'})}
+                                                            className="border rounded px-3 py-2 w-full">
+                                                            <option value="false">⏳ Pendiente</option>
+                                                            <option value="true">✓ Pagada</option>
+                                                        </select>
+                                                    </div>
+                                                    
+                                                    {editandoSocio.cuota_pagada && (
+                                                        <div>
+                                                            <label className="block text-sm font-semibold mb-1">Fecha de Pago</label>
+                                                            <input 
+                                                                type="date" 
+                                                                value={editandoSocio.fecha_pago || ''}
+                                                                onChange={(e) => setEditandoSocio({...editandoSocio, fecha_pago: e.target.value})}
+                                                                className="border rounded px-3 py-2 w-full"
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                
+                                                <div className="flex gap-3 mt-6">
+                                                    <button 
+                                                        onClick={actualizarDatosSocio}
+                                                        className="btn-primary px-6 py-2 rounded flex-1">
+                                                        ✓ Guardar Cambios
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => setEditandoSocio(null)}
+                                                        className="bg-gray-400 text-white px-6 py-2 rounded hover:bg-gray-500">
+                                                        Cancelar
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                         
