@@ -123,6 +123,7 @@
             const [verHistorial, setVerHistorial] = useState(false);
             const [logoClub, setLogoClub] = useState(localStorage.getItem('logo_club') || '');
             const [editandoLogo, setEditandoLogo] = useState(false);
+            const [editandoNumeroSocio, setEditandoNumeroSocio] = useState(null); // {socioId: 'xxx', numero: 123}
 
             useEffect(() => {
                 supabase.auth.getSession().then(({ data: { session } }) => {
@@ -346,6 +347,7 @@
                 
                 // Preparar datos para Excel
                 const datosExcel = socios.map(socio => ({
+                    'Nº Socio': socio.numero_socio || '-',
                     'Nombre': socio.nombre,
                     'Apellidos': socio.apellidos,
                     'Email': socio.email,
@@ -378,6 +380,7 @@
                 const datosExcel = inscritos.map(inscripcion => {
                     const socio = socios.find(s => s.id === inscripcion.socio_id);
                     return {
+                        'Nº Socio': socio?.numero_socio || '-',
                         'Nombre': socio?.nombre || '-',
                         'Apellidos': socio?.apellidos || '-',
                         'Email': socio?.email || '-',
@@ -406,6 +409,7 @@
                     return {
                         'ID Pedido': compra.id.substring(0, 8),
                         'Fecha': compra.fecha,
+                        'Nº Socio': socio?.numero_socio || '-',
                         'Cliente': socio ? `${socio.nombre} ${socio.apellidos}` : '-',
                         'Email': socio?.email || '-',
                         'Teléfono': socio?.telefono || '-',
@@ -430,6 +434,29 @@
                 const { error } = await supabase.from('socios').update({ cuota_pagada: true, fecha_pago: new Date().toISOString().split('T')[0] }).eq('id', socioId);
                 if (error) alert('Error: ' + error.message);
                 else { alert('Cuota de 20€ marcada como pagada'); loadAllData(); }
+            };
+
+            const actualizarNumeroSocio = async (socioId, numero) => {
+                if (!isAdmin) return;
+                
+                // Validar que sea un número
+                const numeroInt = parseInt(numero);
+                if (isNaN(numeroInt) || numeroInt < 1) {
+                    alert('❌ El número de socio debe ser un número mayor que 0');
+                    return;
+                }
+                
+                const { error } = await supabase.from('socios').update({ numero_socio: numeroInt }).eq('id', socioId);
+                if (error) {
+                    if (error.code === '23505') {
+                        alert('❌ Ese número de socio ya está en uso.\nCada socio debe tener un número único.');
+                    } else {
+                        alert('Error: ' + error.message);
+                    }
+                } else {
+                    setEditandoNumeroSocio(null);
+                    loadAllData();
+                }
             };
 
             const crearSalida = async () => {
@@ -1056,7 +1083,10 @@
                                             {socios.filter(s => !s.cuota_pagada).map(socio => (
                                                 <div key={socio.id} className="border border-yellow-300 rounded-lg p-4 bg-yellow-50 flex justify-between items-center">
                                                     <div>
-                                                        <p className="font-semibold text-lg">{socio.nombre} {socio.apellidos}</p>
+                                                        <p className="font-semibold text-lg">
+                                                            {socio.numero_socio && <span className="text-corp-primary">#{socio.numero_socio} </span>}
+                                                            {socio.nombre} {socio.apellidos}
+                                                        </p>
                                                         <p className="text-sm text-gray-600">{socio.email}</p>
                                                         <p className="text-sm text-gray-600">DNI: {socio.dni}</p>
                                                     </div>
@@ -1141,7 +1171,10 @@
                                                         <div className="flex justify-between items-start mb-3">
                                                             <div>
                                                                 <p className="font-semibold text-lg">🆕 Pedido #{compra.id.substring(0, 8)}</p>
-                                                                <p className="text-sm text-gray-600">Cliente: {socio?.nombre} {socio?.apellidos}</p>
+                                                                <p className="text-sm text-gray-600">
+                                                                    Cliente: {socio?.numero_socio && <span className="text-corp-primary font-semibold">#{socio.numero_socio} </span>}
+                                                                    {socio?.nombre} {socio?.apellidos}
+                                                                </p>
                                                                 <p className="text-sm text-gray-600">📅 {compra.fecha}</p>
                                                             </div>
                                                             <div className="text-right">
@@ -1247,6 +1280,7 @@
                                 <table className="w-full">
                                     <thead className="bg-gray-100">
                                         <tr>
+                                            {isAdmin && <th className="px-4 py-2 text-left">Nº Socio</th>}
                                             <th className="px-4 py-2 text-left">Nombre</th>
                                             <th className="px-4 py-2 text-left">Email</th>
                                             <th className="px-4 py-2 text-left">Teléfono</th>
@@ -1258,6 +1292,43 @@
                                     <tbody>
                                         {socios.map(socio => (
                                             <tr key={socio.id} className="border-b">
+                                                {isAdmin && (
+                                                    <td className="px-4 py-3">
+                                                        {editandoNumeroSocio?.socioId === socio.id ? (
+                                                            <div className="flex items-center gap-2">
+                                                                <input 
+                                                                    type="number" 
+                                                                    min="1"
+                                                                    value={editandoNumeroSocio.numero}
+                                                                    onChange={(e) => setEditandoNumeroSocio({...editandoNumeroSocio, numero: e.target.value})}
+                                                                    className="border rounded px-2 py-1 w-20"
+                                                                    autoFocus
+                                                                />
+                                                                <button 
+                                                                    onClick={() => actualizarNumeroSocio(socio.id, editandoNumeroSocio.numero)}
+                                                                    className="bg-green-600 text-white px-2 py-1 rounded text-sm hover:bg-green-700">
+                                                                    ✓
+                                                                </button>
+                                                                <button 
+                                                                    onClick={() => setEditandoNumeroSocio(null)}
+                                                                    className="bg-gray-400 text-white px-2 py-1 rounded text-sm hover:bg-gray-500">
+                                                                    ✕
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-semibold text-corp-primary">
+                                                                    {socio.numero_socio ? `#${socio.numero_socio}` : '-'}
+                                                                </span>
+                                                                <button 
+                                                                    onClick={() => setEditandoNumeroSocio({socioId: socio.id, numero: socio.numero_socio || ''})}
+                                                                    className="text-gray-500 hover:text-corp-primary text-sm">
+                                                                    ✏️
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </td>
+                                                )}
                                                 <td className="px-4 py-3">{socio.nombre} {socio.apellidos}</td>
                                                 <td className="px-4 py-3">{socio.email}</td>
                                                 <td className="px-4 py-3">{socio.telefono || '-'}</td>
@@ -1403,6 +1474,7 @@
                                                         <div className="flex flex-wrap gap-2">
                                                             {sociosInscritos.map(socio => (
                                                                 <span key={socio.id} className="bg-corp-bg-pale text-corp-secondary px-3 py-1 rounded-full text-sm">
+                                                                    {socio.numero_socio && <span className="font-semibold">#{socio.numero_socio} </span>}
                                                                     {socio.nombre} {socio.apellidos}
                                                                 </span>
                                                             ))}
@@ -1664,16 +1736,23 @@
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {stravaStats.sort((a, b) => b.km_mes - a.km_mes).map((stat, i) => (
-                                                    <tr key={stat.id} className="border-b">
-                                                        <td className="px-4 py-3">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</td>
-                                                        <td className="px-4 py-3">{stat.socios?.nombre} {stat.socios?.apellidos}</td>
-                                                        <td className="px-4 py-3">{stat.km_mes} km</td>
-                                                        <td className="px-4 py-3">{stat.km_ano} km</td>
-                                                        <td className="px-4 py-3">{stat.desnivel_mes} m</td>
-                                                        <td className="px-4 py-3">{stat.salidas_mes}</td>
-                                                    </tr>
-                                                ))}
+                                                {stravaStats.sort((a, b) => b.km_mes - a.km_mes).map((stat, i) => {
+                                                    const socio = socios.find(s => s.id === stat.socio_id);
+                                                    const numeroSocio = socio?.numero_socio;
+                                                    return (
+                                                        <tr key={stat.id} className="border-b">
+                                                            <td className="px-4 py-3">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}</td>
+                                                            <td className="px-4 py-3">
+                                                                {numeroSocio && <span className="text-corp-primary font-semibold">#{numeroSocio} </span>}
+                                                                {stat.socios?.nombre} {stat.socios?.apellidos}
+                                                            </td>
+                                                            <td className="px-4 py-3">{stat.km_mes} km</td>
+                                                            <td className="px-4 py-3">{stat.km_ano} km</td>
+                                                            <td className="px-4 py-3">{stat.desnivel_mes} m</td>
+                                                            <td className="px-4 py-3">{stat.salidas_mes}</td>
+                                                        </tr>
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>
