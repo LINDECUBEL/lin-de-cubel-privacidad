@@ -97,6 +97,7 @@
 
         function ClubCiclistaApp() {
             const [session, setSession] = useState(null);
+            const stravaProcessing = React.useRef(false);
             const [loading, setLoading] = useState(true);
             const [isAdmin, setIsAdmin] = useState(false);
             const [currentSocio, setCurrentSocio] = useState(null);
@@ -168,6 +169,8 @@
                 const pendingCode = localStorage.getItem('strava_pending_code');
                 
                 if (pendingCode && currentSocio) {
+                    if (stravaProcessing.current) return;
+                    stravaProcessing.current = true;
                     localStorage.removeItem('strava_pending_code');
                     
                     const clientId = stravaClientId || localStorage.getItem('strava_client_id');
@@ -216,6 +219,7 @@
                         }
                     })
                     .catch(err => {
+                        stravaProcessing.current = false;
                         alert('❌ Error al conectar con Strava: ' + err.message);
                     });
                 }
