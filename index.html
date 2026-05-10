@@ -198,9 +198,11 @@
                                     .select('*')
                                     .eq('id', currentSocio.id)
                                     .single();
-                                if (updatedSocio) setCurrentSocio(updatedSocio);
+                                if (updatedSocio) {
+                                    setCurrentSocio(updatedSocio);
+                                    setSocios(prev => prev.map(s => s.id === updatedSocio.id ? updatedSocio : s));
+                                }
                                 alert('✅ ¡Conectado con Strava!\n\nAhora haz clic en "🔄 Sincronizar" para ver tus estadísticas.');
-                                loadAllData();
                             } else {
                                 alert('❌ Error al guardar conexión: ' + error.message);
                             }
@@ -415,9 +417,13 @@
 
 
             const pagarCuota = async (socioId) => {
-                const { error } = await supabase.from('socios').update({ cuota_pagada: true, fecha_pago: new Date().toISOString().split('T')[0] }).eq('id', socioId);
+                const fechaPago = new Date().toISOString().split('T')[0];
+                const { error } = await supabase.from('socios').update({ cuota_pagada: true, fecha_pago: fechaPago }).eq('id', socioId);
                 if (error) alert('Error: ' + error.message);
-                else { alert('Cuota de 20€ marcada como pagada'); loadAllData(); }
+                else {
+                    alert('Cuota de 20€ marcada como pagada');
+                    setSocios(prev => prev.map(s => s.id === socioId ? {...s, cuota_pagada: true, fecha_pago: fechaPago} : s));
+                }
             };
 
             const abrirEditSocio = (socio) => {
@@ -437,7 +443,7 @@
             };
 
             const guardarEditSocio = async (socioId) => {
-                const { error } = await supabase.from('socios').update({
+                const updates = {
                     numero_socio: formEditSocio.numero_socio ? parseInt(formEditSocio.numero_socio) : null,
                     nombre: formEditSocio.nombre,
                     apellidos: formEditSocio.apellidos,
@@ -448,9 +454,13 @@
                     direccion: formEditSocio.direccion,
                     cuota_pagada: formEditSocio.cuota_pagada,
                     fecha_pago: formEditSocio.fecha_pago || null
-                }).eq('id', socioId);
+                };
+                const { error } = await supabase.from('socios').update(updates).eq('id', socioId);
                 if (error) alert('Error: ' + error.message);
-                else { setSocioEditando(null); loadAllData(); }
+                else {
+                    setSocioEditando(null);
+                    setSocios(prev => prev.map(s => s.id === socioId ? {...s, ...updates} : s));
+                }
             };
 
             const crearSalida = async () => {
@@ -459,7 +469,7 @@
                     alert('Completa los campos obligatorios');
                     return;
                 }
-                const { error } = await supabase.from('salidas').insert([{
+                const { data, error } = await supabase.from('salidas').insert([{
                     nombre: nuevaSalida.nombre,
                     fecha: nuevaSalida.fecha,
                     hora: nuevaSalida.hora,
@@ -467,14 +477,14 @@
                     desnivel: parseInt(nuevaSalida.desnivel) || 0,
                     nivel: nuevaSalida.nivel,
                     punto_encuentro: nuevaSalida.punto_encuentro,
-                    propuesta_por: null // Salida oficial del admin
-                }]);
+                    propuesta_por: null
+                }]).select('*, propuesta_por_socio:propuesta_por(nombre, apellidos)');
                 if (error) alert('Error: ' + error.message);
                 else {
                     alert('Salida oficial creada');
                     setNuevaSalida({ nombre: '', fecha: '', hora: '', distancia: '', desnivel: '', nivel: 'Intermedio', punto_encuentro: '' });
                     setMostrarFormSalida(false);
-                    loadAllData();
+                    if (data) setSalidas(prev => [data[0], ...prev]);
                 }
             };
 
@@ -484,7 +494,7 @@
                     alert('Completa los campos obligatorios');
                     return;
                 }
-                const { error } = await supabase.from('salidas').insert([{
+                const { data, error } = await supabase.from('salidas').insert([{
                     nombre: nuevaSalida.nombre,
                     fecha: nuevaSalida.fecha,
                     hora: nuevaSalida.hora,
@@ -492,19 +502,18 @@
                     desnivel: parseInt(nuevaSalida.desnivel) || 0,
                     nivel: nuevaSalida.nivel,
                     punto_encuentro: nuevaSalida.punto_encuentro,
-                    propuesta_por: currentSocio.id // Propuesta del socio
-                }]);
+                    propuesta_por: currentSocio.id
+                }]).select('*, propuesta_por_socio:propuesta_por(nombre, apellidos)');
                 if (error) alert('Error: ' + error.message);
                 else {
                     alert('✅ Salida propuesta con éxito!\n\nTodos los socios pueden verla y apuntarse.');
                     setNuevaSalida({ nombre: '', fecha: '', hora: '', distancia: '', desnivel: '', nivel: 'Intermedio', punto_encuentro: '' });
                     setMostrarFormSalida(false);
-                    loadAllData();
+                    if (data) setSalidas(prev => [data[0], ...prev]);
                 }
             };
 
             const cancelarPropuesta = async (salidaId, propuestaPor) => {
-                // Solo el que propuso o el admin pueden cancelar/eliminar
                 if (!currentSocio && !isAdmin) return;
                 if (!isAdmin && currentSocio.id !== propuestaPor) {
                     alert('Solo puedes cancelar tus propias propuestas');
@@ -513,30 +522,44 @@
                 if (!confirm('¿Cancelar esta salida?')) return;
                 const { error } = await supabase.from('salidas').delete().eq('id', salidaId);
                 if (error) alert('Error: ' + error.message);
-                else { alert('Salida cancelada'); loadAllData(); }
+                else {
+                    alert('Salida cancelada');
+                    setSalidas(prev => prev.filter(s => s.id !== salidaId));
+                    setInscripciones(prev => prev.filter(i => i.salida_id !== salidaId));
+                }
             };
 
             const inscribirseASalida = async (salidaId) => {
                 if (!currentSocio) return;
-                const { error } = await supabase.from('inscripciones').insert([{ salida_id: salidaId, socio_id: currentSocio.id }]);
+                const { data, error } = await supabase.from('inscripciones').insert([{ salida_id: salidaId, socio_id: currentSocio.id }]).select();
                 if (error) {
                     if (error.code === '23505') alert('Ya estás inscrito');
                     else alert('Error: ' + error.message);
-                } else { alert('¡Inscripción realizada!'); loadAllData(); }
+                } else {
+                    alert('¡Inscripción realizada!');
+                    if (data) setInscripciones(prev => [...prev, data[0]]);
+                }
             };
 
             const desinscribirseASalida = async (salidaId) => {
                 if (!currentSocio) return;
                 const { error } = await supabase.from('inscripciones').delete().eq('salida_id', salidaId).eq('socio_id', currentSocio.id);
                 if (error) alert('Error: ' + error.message);
-                else { alert('Desinscripción realizada'); loadAllData(); }
+                else {
+                    alert('Desinscripción realizada');
+                    setInscripciones(prev => prev.filter(i => !(i.salida_id === salidaId && i.socio_id === currentSocio.id)));
+                }
             };
 
             const eliminarSalida = async (salidaId) => {
                 if (!isAdmin || !confirm('¿Eliminar esta salida?')) return;
                 const { error } = await supabase.from('salidas').delete().eq('id', salidaId);
                 if (error) alert('Error: ' + error.message);
-                else { alert('Salida eliminada'); loadAllData(); }
+                else {
+                    alert('Salida eliminada');
+                    setSalidas(prev => prev.filter(s => s.id !== salidaId));
+                    setInscripciones(prev => prev.filter(i => i.salida_id !== salidaId));
+                }
             };
 
             const crearProducto = async () => {
@@ -545,7 +568,7 @@
                     alert('Completa nombre y precio');
                     return;
                 }
-                const { error } = await supabase.from('productos').insert([{
+                const { data, error } = await supabase.from('productos').insert([{
                     nombre: nuevoProducto.nombre,
                     precio: parseFloat(nuevoProducto.precio),
                     imagen: nuevoProducto.imagen,
@@ -555,13 +578,13 @@
                     stock_l: parseInt(nuevoProducto.stock_l) || 0,
                     stock_xl: parseInt(nuevoProducto.stock_xl) || 0,
                     stock_xxl: parseInt(nuevoProducto.stock_xxl) || 0
-                }]);
+                }]).select();
                 if (error) alert('Error: ' + error.message);
                 else {
                     alert('Producto creado');
                     setNuevoProducto({ nombre: '', precio: '', imagen: '', stock_xs: 0, stock_s: 0, stock_m: 0, stock_l: 0, stock_xl: 0, stock_xxl: 0 });
                     setMostrarFormProducto(false);
-                    loadAllData();
+                    if (data) setProductos(prev => [...prev, data[0]]);
                 }
             };
 
@@ -569,25 +592,28 @@
                 if (!isAdmin || !confirm('¿Eliminar este producto?')) return;
                 const { error } = await supabase.from('productos').delete().eq('id', productoId);
                 if (error) alert('Error: ' + error.message);
-                else { alert('Producto eliminado'); loadAllData(); }
+                else {
+                    alert('Producto eliminado');
+                    setProductos(prev => prev.filter(p => p.id !== productoId));
+                }
             };
 
             const actualizarProducto = async () => {
                 if (!isAdmin || !productoEditando) return;
-                const { error } = await supabase.from('productos').update({
+                const updates = {
                     stock_xs: parseInt(productoEditando.stock_xs) || 0,
                     stock_s: parseInt(productoEditando.stock_s) || 0,
                     stock_m: parseInt(productoEditando.stock_m) || 0,
                     stock_l: parseInt(productoEditando.stock_l) || 0,
                     stock_xl: parseInt(productoEditando.stock_xl) || 0,
                     stock_xxl: parseInt(productoEditando.stock_xxl) || 0
-                }).eq('id', productoEditando.id);
-                
+                };
+                const { error } = await supabase.from('productos').update(updates).eq('id', productoEditando.id);
                 if (error) alert('Error: ' + error.message);
                 else {
                     alert('Stock actualizado');
                     setProductoEditando(null);
-                    loadAllData();
+                    setProductos(prev => prev.map(p => p.id === productoEditando.id ? {...p, ...updates} : p));
                 }
             };
 
@@ -603,22 +629,27 @@
 
             const procesarCompra = async () => {
                 if (carrito.length === 0) return;
+                const updatedProductos = [...productos];
                 for (const item of carrito) {
                     const stockField = `stock_${item.talla.toLowerCase()}`;
-                    const producto = productos.find(p => p.id === item.productoId);
+                    const producto = updatedProductos.find(p => p.id === item.productoId);
                     await supabase.from('productos').update({ [stockField]: producto[stockField] - 1 }).eq('id', item.productoId);
+                    const idx = updatedProductos.findIndex(p => p.id === item.productoId);
+                    if (idx >= 0) updatedProductos[idx] = {...updatedProductos[idx], [stockField]: updatedProductos[idx][stockField] - 1};
                 }
                 const total = carrito.reduce((sum, item) => sum + item.precio, 0);
-                await supabase.from('compras').insert([{ 
+                const nuevaCompra = { 
                     socio_id: currentSocio?.id, 
                     total, 
                     items: JSON.stringify(carrito),
                     fecha: new Date().toISOString().split('T')[0],
                     preparado: false
-                }]);
+                };
+                const { data } = await supabase.from('compras').insert([nuevaCompra]).select();
                 alert(`Compra procesada: ${total}€`);
                 setCarrito([]);
-                loadAllData();
+                setProductos(updatedProductos);
+                if (data) setCompras(prev => [data[0], ...prev]);
             };
 
             const marcarPedidoPreparado = async (compraId) => {
@@ -627,7 +658,7 @@
                 if (error) alert('Error: ' + error.message);
                 else {
                     alert('Pedido marcado como preparado');
-                    loadAllData();
+                    setCompras(prev => prev.map(c => c.id === compraId ? {...c, preparado: true} : c));
                 }
             };
 
@@ -642,7 +673,7 @@
                 } else {
                     console.log('Pedido eliminado exitosamente');
                     alert('Pedido eliminado');
-                    loadAllData();
+                    setCompras(prev => prev.filter(c => c.id !== compraId));
                 }
             };
 
@@ -845,7 +876,7 @@
                     kmSemana = Math.round(kmSemana / 1000);
                     desnivelSemana = Math.round(desnivelSemana);
                     
-                    await supabase.from('strava_stats').upsert([{
+                    const newStats = {
                         socio_id: currentSocio.id,
                         km_mes: kmMes,
                         km_ano: kmAno,
@@ -856,10 +887,20 @@
                         km_semana: kmSemana,
                         desnivel_semana: desnivelSemana,
                         salidas_semana: salidasSemana
-                    }], { onConflict: 'socio_id' });
+                    };
+                    await supabase.from('strava_stats').upsert([newStats], { onConflict: 'socio_id' });
+                    
+                    // Actualizar estado local directamente
+                    setStravaStats(prev => {
+                        const exists = prev.find(s => s.socio_id === currentSocio.id);
+                        if (exists) {
+                            return prev.map(s => s.socio_id === currentSocio.id ? {...s, ...newStats} : s);
+                        } else {
+                            return [...prev, {...newStats, socios: {nombre: currentSocio.nombre, apellidos: currentSocio.apellidos, numero_socio: currentSocio.numero_socio}}];
+                        }
+                    });
                     
                     alert(`✅ Sincronizado!\nKm año: ${kmAno} | Desnivel año: ${desnivelAno}m\nKm mes: ${kmMes} | Desnivel mes: ${desnivelMes}m\nKm semana: ${kmSemana} | Desnivel semana: ${desnivelSemana}m`);
-                    loadAllData();
                 } catch (error) {
                     console.error('Error en sincronizarStrava:', error);
                     alert('Error al sincronizar: ' + error.message);
